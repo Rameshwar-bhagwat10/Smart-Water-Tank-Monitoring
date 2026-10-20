@@ -12,7 +12,55 @@ LocalDashboardServer::LocalDashboardServer(uint16_t port)
     _isRunning(false),
     _tankId("tank-01"),
     _lastTelemetry(nullptr),
-    _pumpCtrl(nullptr) {}
+    _pumpCtrl(nullptr),
+    _sessionToken(""),
+    _sessionExpiryMs(0),
+    _failedAuthAttempts(0),
+    _authLockoutUntilMs(0) {}
+
+bool LocalDashboardServer::checkAuthentication(const String& token, const String& pin) {
+  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
+    return false;
+  }
+
+  // 1. Session token verification (15 min TTL)
+  if (token.length() > 0 && _sessionToken.length() > 0) {
+    if (token == _sessionToken && millis() < _sessionExpiryMs) {
+      resetFailedAuth();
+      return true;
+    }
+  }
+
+  // Check custom HTTP header
+  if (_server.hasHeader("X-Auth-Token")) {
+    String hToken = _server.header("X-Auth-Token");
+    if (hToken.length() > 0 && hToken == _sessionToken && millis() < _sessionExpiryMs) {
+      resetFailedAuth();
+      return true;
+    }
+  }
+
+  // 2. PIN verification (SEC-002: Only configured PIN, no backdoors)
+  if (pin.length() > 0 && pin == DEFAULT_OPERATOR_PIN) {
+    resetFailedAuth();
+    return true;
+  }
+
+  return false;
+}
+
+void LocalDashboardServer::recordFailedAuth() {
+  _failedAuthAttempts++;
+  if (_failedAuthAttempts >= 5) {
+    _authLockoutUntilMs = millis() + 30000UL; // 30s lockout
+    Serial.println(F("[LocalServer] ⚠️ SEC-002: 5 consecutive failed auth attempts. Rate limit lockout engaged for 30s."));
+  }
+}
+
+void LocalDashboardServer::resetFailedAuth() {
+  _failedAuthAttempts = 0;
+  _authLockoutUntilMs = 0;
+}
 
 void LocalDashboardServer::begin(const char* tankId) {
   _tankId = tankId ? tankId : "tank-01";
@@ -122,32 +170,47 @@ void LocalDashboardServer::handleApiLogin() {
   _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   _server.sendHeader("Access-Control-Allow-Headers", "*");
 
+  // SEC-002: Check rate-limiting lockout
+  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
+    uint32_t waitSec = (_authLockoutUntilMs - millis()) / 1000 + 1;
+    _server.send(429, "application/json", "{\"success\":false,\"reason\":\"Rate limit exceeded. Try again in " + String(waitSec) + "s.\"}");
+    return;
+  }
+
   String email = _server.arg("email");
   String pass = _server.arg("pass");
+  String pin = _server.arg("pin");
   email.trim();
   pass.trim();
+  pin.trim();
 
-  if (email.length() == 0 || pass.length() == 0) {
-    _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Email and password are required\"}");
+  // Validate credentials: must match configured PIN (no backdoor "1234")
+  bool authOk = false;
+  if (pin.length() > 0 && pin == DEFAULT_OPERATOR_PIN) {
+    authOk = true;
+  } else if (pass.length() > 0 && pass == DEFAULT_OPERATOR_PIN) {
+    authOk = true;
+  }
+
+  if (!authOk) {
+    recordFailedAuth();
+    _server.send(401, "application/json", "{\"success\":false,\"reason\":\"Invalid credentials. Correct operator PIN required.\"}");
     return;
   }
 
-  if (email.indexOf('@') == -1 || email.indexOf('.') == -1) {
-    _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Invalid email address format\"}");
-    return;
-  }
+  resetFailedAuth();
 
-  if (pass.length() < 6) {
-    _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Password must be at least 6 characters\"}");
-    return;
-  }
+  // SEC-002: Generate time-bounded cryptographically random session token (15-min TTL)
+  _sessionToken = "st_" + String(ESP.getChipId(), HEX) + "_" + String(os_random(), HEX) + "_" + String(millis(), HEX);
+  _sessionExpiryMs = millis() + (15 * 60 * 1000UL);
 
   JsonDocument doc;
   doc["success"] = true;
-  doc["email"] = email;
+  doc["email"] = email.length() > 0 ? email : "operator@local";
   doc["tankId"] = _tankId;
   doc["role"] = "operator";
-  doc["token"] = "auth_" + String(millis());
+  doc["token"] = _sessionToken;
+  doc["expiresIn"] = 900;
 
   String res;
   serializeJson(doc, res);
@@ -163,38 +226,45 @@ void LocalDashboardServer::handleApiCommand() {
     return;
   }
 
-  String email = _server.arg("email");
-  String uid = _server.arg("uid");
-  String pin = _server.arg("pin");
-  String mode = _server.arg("mode");
-  String pumpState = _server.arg("pumpState");
-
-  // Validate credentials: must be authenticated via Firebase email/uid or operator PIN
-  bool authorized = false;
-  if (email.length() > 0 && email.indexOf('@') != -1) {
-    authorized = true;
-  } else if (uid.length() > 0) {
-    authorized = true;
-  } else if (pin == DEFAULT_OPERATOR_PIN || pin == "1234") {
-    authorized = true;
-  }
-
-  if (!authorized) {
-    _server.send(401, "application/json", "{\"success\":false,\"reason\":\"Unauthorized: Please sign in with your Firebase email and password.\"}");
+  // SEC-002: Check rate-limiting lockout
+  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
+    uint32_t waitSec = (_authLockoutUntilMs - millis()) / 1000 + 1;
+    _server.send(429, "application/json", "{\"success\":false,\"reason\":\"Rate limit exceeded. Try again in " + String(waitSec) + "s.\"}");
     return;
   }
 
-  // Parse Mode
+  String token = _server.arg("token");
+  String pin = _server.arg("pin");
+  String mode = _server.arg("mode");
+  String pumpState = _server.arg("pumpState");
+  mode.trim();
+  pumpState.trim();
+
+  // SEC-002: Strict Authentication Check (Eliminates arbitrary '@' and UID bypasses)
+  if (!checkAuthentication(token, pin)) {
+    recordFailedAuth();
+    _server.send(401, "application/json", "{\"success\":false,\"reason\":\"Unauthorized: Valid session token or operator PIN required.\"}");
+    return;
+  }
+
+  // SEC-002: Input Schema Validation - Control Mode
   if (mode.length() > 0) {
     if (mode == "AUTO") {
       _pumpCtrl->requestMode(ControlMode::AUTO);
     } else if (mode == "MANUAL") {
       _pumpCtrl->requestMode(ControlMode::MANUAL);
+    } else {
+      _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Invalid mode. Must be AUTO or MANUAL.\"}");
+      return;
     }
   }
 
-  // Parse Manual Pump Trigger
+  // SEC-002: Input Schema Validation - Pump State
   if (_pumpCtrl->getMode() == ControlMode::MANUAL && pumpState.length() > 0) {
+    if (pumpState != "ON" && pumpState != "OFF") {
+      _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Invalid pumpState. Must be ON or OFF.\"}");
+      return;
+    }
     bool reqOn = (pumpState == "ON");
     CommandResult res = _pumpCtrl->requestManualPump(reqOn, millis());
     if (!res.accepted) {
@@ -246,6 +316,16 @@ void LocalDashboardServer::handleApiWifiSetup() {
   _server.sendHeader("Access-Control-Allow-Origin", "*");
   _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   _server.sendHeader("Access-Control-Allow-Headers", "*");
+
+  // SEC-002: Check rate-limiting lockout
+  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
+    uint32_t waitSec = (_authLockoutUntilMs - millis()) / 1000 + 1;
+    _server.send(429, "application/json", "{\"success\":false,\"reason\":\"Rate limit exceeded. Try again in " + String(waitSec) + "s.\"}");
+    return;
+  }
+
+  String token = _server.arg("token");
+  String pin = _server.arg("pin");
   String ssid = _server.arg("ssid");
   String pass = _server.arg("pass");
   String tankId = _server.arg("tankId");
@@ -253,8 +333,20 @@ void LocalDashboardServer::handleApiWifiSetup() {
   pass.trim();
   tankId.trim();
 
-  if (ssid.length() == 0) {
-    _server.send(400, "application/json", "{\"success\":false,\"error\":\"SSID cannot be empty\"}");
+  // SEC-002: Authenticate Wi-Fi Setup requests (Deny unauthorized configuration reflash)
+  if (!checkAuthentication(token, pin)) {
+    recordFailedAuth();
+    _server.send(401, "application/json", "{\"success\":false,\"error\":\"Unauthorized: Operator PIN or session token required to configure Wi-Fi.\"}");
+    return;
+  }
+
+  if (ssid.length() == 0 || ssid.length() > 32) {
+    _server.send(400, "application/json", "{\"success\":false,\"error\":\"SSID must be between 1 and 32 characters\"}");
+    return;
+  }
+
+  if (pass.length() > 64) {
+    _server.send(400, "application/json", "{\"success\":false,\"error\":\"Password cannot exceed 64 characters\"}");
     return;
   }
 
@@ -424,6 +516,7 @@ String LocalDashboardServer::buildDashboardHtml() {
     "    }"
     "    currentUser = ret.email || email;"
     "    sessionStorage.setItem('st_email', currentUser);"
+    "    if (ret.token) sessionStorage.setItem('st_token', ret.token);"
     "    document.getElementById('auth-overlay').style.display = 'none';"
     "    fetchTelemetry();"
     "  } catch(e) {"
@@ -461,7 +554,8 @@ String LocalDashboardServer::buildDashboardHtml() {
     "  await sendCmd('MANUAL', s);"
     "}"
     "async function sendCmd(m, s){"
-    "  const body = new URLSearchParams({ email: currentUser, mode: m, pumpState: s });"
+    "  const token = sessionStorage.getItem('st_token') || '';"
+    "  const body = new URLSearchParams({ token: token, mode: m, pumpState: s });"
     "  try {"
     "    const res = await fetch('/api/command', { method: 'POST', body: body });"
     "    const ret = await res.json();"
@@ -562,6 +656,10 @@ String LocalDashboardServer::buildSetupHtml() {
     "</select>"
     "<input type='text' id='custom_tank' placeholder='e.g. tank-04' style='display:none;margin-top:0.5rem;'>"
     "<div style='font-size:0.75rem;color:var(--muted);margin-top:0.35rem;'>Links this hardware board to the matching operator dashboard account automatically.</div>"
+    "</div>"
+    "<div class='form-group'>"
+    "<label>Technician / Security PIN</label>"
+    "<input type='password' name='pin' placeholder='Enter PIN (Default: admin123)' required value='admin123'>"
     "</div>"
     "<button type='submit' class='btn'>💾 Save &amp; Connect Tank</button>"
     "<a href='/' class='link-back'>&larr; Back to Live Tank Dashboard</a>"

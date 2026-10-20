@@ -14,7 +14,7 @@ CaptivePortal::~CaptivePortal() {
   stop();
 }
 
-void CaptivePortal::start(const char* apName) {
+void CaptivePortal::start(const char* apName, const char* apPassword) {
   if (apName != nullptr && strlen(apName) > 0) {
     _apName = apName;
   } else {
@@ -25,7 +25,11 @@ void CaptivePortal::start(const char* apName) {
   WiFi.disconnect();
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(AP_IP, AP_IP, IPAddress(255, 255, 255, 0));
-  WiFi.softAP(_apName.c_str());
+  if (apPassword != nullptr && strlen(apPassword) >= 8) {
+    WiFi.softAP(_apName.c_str(), apPassword);
+  } else {
+    WiFi.softAP(_apName.c_str());
+  }
 
   _dnsServer.start(DNS_PORT, "*", AP_IP);
   setupRoutes();

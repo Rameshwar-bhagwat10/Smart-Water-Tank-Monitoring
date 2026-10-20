@@ -43,6 +43,8 @@ class SimulatedPumpController {
     this.lockout = SafetyLockout.NONE;
     this.pumpStartMs = 0;
     this.dryRunDetectMs = 0;
+    this.lastLevelPercent = 50.0;
+    this.lastLevelValid = true;
   }
 
   setRelay(state) {
@@ -71,6 +73,14 @@ class SimulatedPumpController {
       if (this.lockout !== SafetyLockout.NONE) {
         return { success: false, reason: `SAFETY_LOCKOUT_${this.lockout}` };
       }
+      if (!this.lastLevelValid) {
+        this.lockout = SafetyLockout.SENSOR_FAULT;
+        return { success: false, reason: 'SENSOR_FAULT' };
+      }
+      if (this.lastLevelPercent >= this.highThreshold) {
+        this.lockout = SafetyLockout.HIGH_LEVEL;
+        return { success: false, reason: 'SAFETY_LOCKOUT_HIGH_LEVEL' };
+      }
       this.setRelay(PumpState.ON);
       return { success: true };
     } else {
@@ -80,6 +90,9 @@ class SimulatedPumpController {
   }
 
   update(nowMs, levelPercent, levelValid, flowRateLpm, pumpCurrentA) {
+    this.lastLevelPercent = levelPercent;
+    this.lastLevelValid = levelValid;
+
     // 1. Critical Sensor Fault Interlock
     if (!levelValid) {
       this.lockout = SafetyLockout.SENSOR_FAULT;
@@ -231,6 +244,32 @@ describe('Pump Controller & Autonomous Safety Interlocks', () => {
       ctrl.update(2000, 95.5, true, 10.0, 2.5);
       assert.strictEqual(ctrl.pumpState, PumpState.OFF);
       assert.strictEqual(ctrl.lockout, SafetyLockout.HIGH_LEVEL);
+    });
+
+    it('rejects manual ON pre-activation at 96% even if lockout was reset', () => {
+      ctrl.setControlMode(ControlMode.MANUAL);
+      ctrl.update(1000, 96.0, true, 0.0, 0.0);
+      ctrl.clearLockout(); // Attempt to bypass lockout
+      assert.strictEqual(ctrl.lockout, SafetyLockout.NONE);
+
+      // Pre-activation check must block relay actuation
+      const res = ctrl.handleManualCommand(PumpState.ON);
+      assert.strictEqual(res.success, false);
+      assert.strictEqual(res.reason, 'SAFETY_LOCKOUT_HIGH_LEVEL');
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.relayPinState, 1); // Relay remains de-energized
+    });
+
+    it('rejects manual ON pre-activation when sensor reading is invalid', () => {
+      ctrl.setControlMode(ControlMode.MANUAL);
+      ctrl.update(1000, 50.0, false, 0.0, 0.0); // Invalid sensor reading
+      ctrl.clearLockout(); // Attempt to clear
+
+      const res = ctrl.handleManualCommand(PumpState.ON);
+      assert.strictEqual(res.success, false);
+      assert.strictEqual(res.reason, 'SENSOR_FAULT');
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.relayPinState, 1);
     });
   });
 

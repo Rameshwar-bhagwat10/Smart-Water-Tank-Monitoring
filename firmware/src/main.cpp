@@ -41,7 +41,8 @@ SmartTank::AlertManager alertMgr(
   SmartTank::PIN_LED_GREEN,
   SmartTank::PIN_LED_YELLOW,
   SmartTank::PIN_LED_RED,
-  SmartTank::PIN_BUZZER
+  SmartTank::PIN_BUZZER,
+  SmartTank::RED_LED_ACTIVE_LOW
 );
 
 SmartTank::PumpController pumpController(
@@ -105,7 +106,7 @@ void setup() {
     Serial.println(F("[Onboarding] Launching SmartTank Wi-Fi Captive Portal..."));
 
     SmartTank::CaptivePortal portal;
-    portal.start();
+    portal.start(nullptr, SmartTank::DEFAULT_AP_PASSWORD);
 
     // Blink Green LED to indicate AP setup mode
     while (!portal.isComplete()) {
@@ -135,8 +136,8 @@ void setup() {
   IPAddress localIp(192, 168, 4, 1);
   WiFi.softAPConfig(localIp, localIp, IPAddress(255, 255, 255, 0));
   String localApSsid = "SmartTank-" + String(activeConfig.tankId);
-  WiFi.softAP(localApSsid.c_str());
-  Serial.printf("[Hybrid] Local Wi-Fi AP Active: %s (Connect phone & open http://192.168.4.1)\n", localApSsid.c_str());
+  WiFi.softAP(localApSsid.c_str(), SmartTank::DEFAULT_AP_PASSWORD);
+  Serial.printf("[Hybrid] Local Wi-Fi AP Active: %s (WPA2 secured, connect phone & open http://192.168.4.1)\n", localApSsid.c_str());
 
   // 10. Start Embedded Local Web Dashboard
   localServer.begin(activeConfig.tankId);

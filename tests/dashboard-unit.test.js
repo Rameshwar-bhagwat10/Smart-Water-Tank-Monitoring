@@ -11,6 +11,12 @@ import {
   ALLOWED_PUMP_STATES,
   ALLOWED_CONTROL_MODES
 } from '../dashboard/src/firebase/validation.js';
+import {
+  getConsistentTankName,
+  getAssignedTankIds,
+  getAvailableTankOptions,
+  getNextAvailableTankId
+} from '../dashboard/src/firebase/auth.js';
 
 console.log('--- RUNNING DASHBOARD UNIT & CONTRACT TESTS ---');
 
@@ -207,6 +213,69 @@ it('rejects excessively long command IDs (> 64 chars)', () => {
   const result = validateCommandPayload(payload, 'user_01');
   assert.strictEqual(result.valid, false);
   assert.ok(result.error.includes('must not exceed 64 characters'));
+});
+
+// 3. Multi-Tank UI & Role Consistency Unit Tests
+it('produces identical and consistent friendly names for tank IDs across both tabs', () => {
+  assert.strictEqual(getConsistentTankName('tank-01'), 'Water Storage Unit 01');
+  assert.strictEqual(getConsistentTankName('tank-1'), 'Water Storage Unit 01');
+  assert.strictEqual(getConsistentTankName('tank-02'), 'Water Storage Unit 02');
+  assert.strictEqual(getConsistentTankName('tank-10'), 'Water Storage Unit 10');
+  assert.strictEqual(getConsistentTankName('tank-rooftop'), 'Water Storage Unit ROOFTOP');
+  
+  // Custom name preserved if present in allTanks
+  const tanks = {
+    'tank-01': { name: 'Ground Sump Facility' }
+  };
+  assert.strictEqual(getConsistentTankName('tank-01', tanks), 'Ground Sump Facility');
+});
+
+it('calculates assigned tank IDs and excludes them completely from available dropdown options', () => {
+  const users = {
+    'uid_op_1': { email: 'op1@test.com', role: 'operator', assignedTankId: 'tank-01', enabled: true },
+    'uid_op_2': { email: 'op2@test.com', role: 'operator', assignedTankId: 'tank-02', enabled: true },
+    'uid_admin': { email: 'admin@test.com', role: 'admin', assignedTankId: null, enabled: true },
+    'uid_disabled': { email: 'disabled@test.com', role: 'operator', assignedTankId: 'tank-03', enabled: false }
+  };
+  const tanks = {
+    'tank-01': { name: 'Water Storage Unit 01', assignedTo: 'uid_op_1' },
+    'tank-02': { name: 'Water Storage Unit 02', assignedTo: 'uid_op_2' },
+    'tank-03': { name: 'Water Storage Unit 03', assignedTo: null }, // Freed by disabled op
+    'tank-04': { name: 'Water Storage Unit 04', assignedTo: null }  // Unassigned existing
+  };
+
+  const assigned = getAssignedTankIds(tanks, users);
+  assert.ok(assigned.has('tank-01'), 'tank-01 must be marked as assigned');
+  assert.ok(assigned.has('tank-02'), 'tank-02 must be marked as assigned');
+  assert.ok(!assigned.has('tank-03'), 'tank-03 of disabled operator should be freed');
+  assert.ok(!assigned.has('tank-04'), 'tank-04 has no operator and should be available');
+
+  const { available, nextId, defaultTankId, defaultTankName } = getAvailableTankOptions(tanks, users);
+
+  // Assigned tanks must NEVER appear in available options
+  const availableIds = available.map(o => o.id);
+  assert.ok(!availableIds.includes('tank-01'), 'tank-01 must not appear in available dropdown');
+  assert.ok(!availableIds.includes('tank-02'), 'tank-02 must not appear in available dropdown');
+
+  // Unassigned existing tanks and next sequential tank MUST appear
+  assert.ok(availableIds.includes('tank-03'), 'tank-03 should appear as available');
+  assert.ok(availableIds.includes('tank-04'), 'tank-04 should appear as available');
+  assert.strictEqual(nextId, 'tank-05', 'Next sequential auto-tank should be tank-05');
+  assert.ok(availableIds.includes('tank-05'), 'tank-05 should be available as next auto option');
+
+  // Verify default name matches default ID
+  assert.strictEqual(defaultTankId, 'tank-05');
+  assert.strictEqual(defaultTankName, 'Water Storage Unit 05');
+});
+
+it('auto-generates tank-01 as default when system has zero existing tanks or users', () => {
+  const { available, nextId, defaultTankId, defaultTankName } = getAvailableTankOptions({}, {});
+  assert.strictEqual(nextId, 'tank-01');
+  assert.strictEqual(defaultTankId, 'tank-01');
+  assert.strictEqual(defaultTankName, 'Water Storage Unit 01');
+  assert.strictEqual(available.length, 1);
+  assert.strictEqual(available[0].id, 'tank-01');
+  assert.strictEqual(available[0].name, 'Water Storage Unit 01');
 });
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);

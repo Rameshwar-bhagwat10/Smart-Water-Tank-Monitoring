@@ -7,7 +7,7 @@ namespace SmartTank {
 
 class AlertManager {
 public:
-  AlertManager(uint8_t greenLedPin, uint8_t yellowLedPin, uint8_t redLedPin, uint8_t buzzerPin);
+  AlertManager(uint8_t greenLedPin, uint8_t yellowLedPin, uint8_t redLedPin, uint8_t buzzerPin, bool redActiveLow = true);
 
   void begin();
   void update(uint32_t currentMillis, bool wifiConnected, bool pumpRunning, SafetyLockout lockout);
@@ -18,6 +18,7 @@ private:
   uint8_t _yellowLed;
   uint8_t _redLed;
   uint8_t _buzzer;
+  bool _redActiveLow;
 
   uint32_t _lastBlinkMillis;
   bool _blinkState;

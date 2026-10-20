@@ -67,6 +67,9 @@ private:
   uint32_t _zeroFlowStartTimeMs;
   uint32_t _lastSwitchTimeMs;
 
+  float _lastLevelPercent;
+  bool _lastLevelValid;
+
   void applyPumpAction(bool on, uint32_t currentMillis);
 };
 

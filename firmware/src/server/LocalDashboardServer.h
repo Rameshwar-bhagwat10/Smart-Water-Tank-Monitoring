@@ -26,6 +26,16 @@ private:
   const TelemetryPacket* _lastTelemetry;
   PumpController* _pumpCtrl;
 
+  // SEC-002: Session Token & Local API Security
+  String _sessionToken;
+  uint32_t _sessionExpiryMs;
+  uint8_t _failedAuthAttempts;
+  uint32_t _authLockoutUntilMs;
+
+  bool checkAuthentication(const String& token, const String& pin);
+  void recordFailedAuth();
+  void resetFailedAuth();
+
   void setupRoutes();
   void handleRoot();
   void handleApiLive();

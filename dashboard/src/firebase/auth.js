@@ -48,6 +48,89 @@ export function getNextAvailableTankId(allTanks = {}, allUsers = {}) {
 }
 
 /**
+ * Calculates a Set of currently assigned tank IDs.
+ */
+export function getAssignedTankIds(allTanks = {}, allUsers = {}) {
+  const assigned = new Set();
+  if (allUsers && typeof allUsers === 'object') {
+    Object.values(allUsers).forEach((u) => {
+      if (u && u.enabled !== false && u.assignedTankId) {
+        assigned.add(String(u.assignedTankId).toLowerCase().trim());
+      }
+    });
+  }
+  if (allTanks && typeof allTanks === 'object') {
+    Object.entries(allTanks).forEach(([id, t]) => {
+      if (t && t.assignedTo && allUsers[t.assignedTo]?.enabled !== false) {
+        assigned.add(String(id).toLowerCase().trim());
+      }
+    });
+  }
+  return assigned;
+}
+
+/**
+ * Returns a consistent friendly name matching the tank ID.
+ */
+export function getConsistentTankName(tankId, allTanks = {}) {
+  if (!tankId) return 'Water Storage Unit 01';
+  const cleanId = String(tankId).trim().toLowerCase();
+  if (allTanks && allTanks[cleanId]?.name) {
+    return allTanks[cleanId].name;
+  }
+  const match = cleanId.match(/^tank-?(\d+)$/i);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const padded = num < 10 ? `0${num}` : `${num}`;
+    return `Water Storage Unit ${padded}`;
+  }
+  const cleanSuffix = cleanId.replace(/^tank-?/i, '').replace(/[-_]/g, ' ').trim();
+  return `Water Storage Unit ${cleanSuffix.toUpperCase() || cleanId.toUpperCase()}`;
+}
+
+/**
+ * Calculates the available unassigned tanks and next auto-generated tank.
+ * Excludes any tank that is currently assigned to an active operator.
+ */
+export function getAvailableTankOptions(allTanks = {}, allUsers = {}) {
+  const assigned = getAssignedTankIds(allTanks, allUsers);
+  const available = [];
+
+  // 1. Next sequential auto-generated tank
+  const nextId = getNextAvailableTankId(allTanks, allUsers);
+  if (!assigned.has(nextId)) {
+    available.push({
+      id: nextId,
+      name: getConsistentTankName(nextId, allTanks),
+      isNext: true
+    });
+  }
+
+  // 2. Any existing tank that is currently unassigned
+  if (allTanks && typeof allTanks === 'object') {
+    Object.keys(allTanks).sort().forEach((id) => {
+      const cleanId = id.toLowerCase().trim();
+      if (!assigned.has(cleanId) && cleanId !== nextId) {
+        available.push({
+          id: cleanId,
+          name: getConsistentTankName(cleanId, allTanks),
+          isExisting: true
+        });
+      }
+    });
+  }
+
+  const defaultId = available[0]?.id || nextId;
+  return {
+    available,
+    nextId,
+    assigned,
+    defaultTankId: defaultId,
+    defaultTankName: getConsistentTankName(defaultId, allTanks)
+  };
+}
+
+/**
  * Concurrency-safe atomic tank reservation using Firebase RTDB transactions.
  */
 export async function allocateNextTankId(database) {
@@ -218,11 +301,21 @@ export async function createOperatorUser(email, password, requestedTankId, tankN
   let cleanTankId = requestedTankId ? requestedTankId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-') : null;
   if (!cleanTankId) {
     cleanTankId = await allocateNextTankId(db);
+  } else {
+    // Verify that the requested tank is not already assigned to an active operator
+    const usersSnap = await get(ref(db, 'users'));
+    const allUsers = usersSnap.val() || {};
+    const existingOp = Object.values(allUsers).find(
+      u => u && u.enabled !== false && String(u.assignedTankId).toLowerCase() === cleanTankId
+    );
+    if (existingOp) {
+      throw new Error(`Tank '${cleanTankId.toUpperCase()}' is already assigned to ${existingOp.email}. Each tank can only be assigned to one operator.`);
+    }
   }
 
   const cleanTankName = (tankName && tankName.trim().length > 0)
     ? tankName.trim()
-    : `Water Storage Unit ${cleanTankId.replace(/^tank-?/i, '').toUpperCase()}`;
+    : getConsistentTankName(cleanTankId);
 
   // Secondary app creation for non-disruptive user provisioning
   const secondaryAppName = `OpCreate_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

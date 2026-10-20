@@ -10,19 +10,23 @@ namespace SmartTank {
 constexpr uint8_t PIN_ULTRASONIC_TRIG  = 5;   // D1 / GPIO5  - Ultrasonic Trigger Output
 constexpr uint8_t PIN_ULTRASONIC_ECHO  = 4;   // D2 / GPIO4  - Ultrasonic Echo Input (via 1k/2k Divider)
 constexpr uint8_t PIN_FLOW_SENSOR      = 14;  // D5 / GPIO14 - ZJ-S201 Flow Sensor Interrupt
-constexpr uint8_t PIN_CURRENT_SENSOR   = A0;  // A0 / ADC0   - ACS712 Hall-Effect Analog Input
-constexpr uint8_t PIN_RELAY            = 12;  // D6 / GPIO12 - Relay Control Output
+constexpr uint8_t PIN_CURRENT_SENSOR   = A0;  // A0 / ADC0   - ACS712 Hall-Effect Analog Input (via Divider)
+constexpr uint8_t PIN_RELAY            = 12;  // D6 / GPIO12 - Relay Control Output (Latched Safe at Boot)
 constexpr uint8_t PIN_BUZZER           = 13;  // D7 / GPIO13 - Piezo Buzzer Output
 constexpr uint8_t PIN_LED_GREEN        = 16;  // D0 / GPIO16 - System / Wi-Fi OK Indicator
-constexpr uint8_t PIN_LED_YELLOW       = 15;  // D8 / GPIO15 - Pump Active Indicator
-constexpr uint8_t PIN_LED_RED          = 0;   // D3 / GPIO0  - System Fault / Alarm Indicator
+constexpr uint8_t PIN_LED_YELLOW       = 15;  // D8 / GPIO15 - Pump Active Indicator (HW-001: Active-HIGH, Cathode to GND)
+constexpr uint8_t PIN_LED_RED          = 2;   // D4 / GPIO2  - Fault / Alarm Indicator (HW-001: Active-LOW, Pull-up Boot Safe)
+constexpr uint8_t PIN_BUTTON_FLASH     = 0;   // D3 / GPIO0  - Reserved for Onboard Flash/Recovery Button (Pull-up Boot Safe)
 
 // ============================================================================
-// RELAY ELECTRICAL POLARITY
+// RELAY & LED ELECTRICAL POLARITY
 // ============================================================================
 // Most 5V optocoupler relay modules are active-LOW (LOW = Relay ON, HIGH = Relay OFF).
-// Set to true if active-LOW, or false if active-HIGH.
-constexpr bool RELAY_ACTIVE_LOW = true;
+constexpr bool RELAY_ACTIVE_LOW    = true;
+constexpr bool RED_LED_ACTIVE_LOW  = true;  // D4/GPIO2 must be pulled HIGH at boot for normal flash execution
+
+// WPA2-PSK Hotspot Passphrase for SoftAP (SEC-003: minimum 8 characters)
+constexpr const char* DEFAULT_AP_PASSWORD = "WaterTank2026!";
 
 // ============================================================================
 // SENSOR CALIBRATION DEFAULTS

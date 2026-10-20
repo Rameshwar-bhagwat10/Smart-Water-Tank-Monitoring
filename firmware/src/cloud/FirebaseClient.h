@@ -35,6 +35,9 @@ public:
   bool sendCommandAck(const char* commandId, const char* status, const char* reason = "");
   bool publishAlert(const char* alertType, const char* severity, const char* message);
 
+  bool isStartupBaselineEstablished() const { return _startupBaselineEstablished; }
+  const char* getLastProcessedCommandId() const { return _lastProcessedCommandId; }
+
   void setTankId(const String& tankId) { _tankId = tankId; }
   const String& getTankId() const { return _tankId; }
 
@@ -52,10 +55,13 @@ private:
   uint32_t _lastCommandPollMs;
 
   char _lastProcessedCommandId[65];
+  bool _startupBaselineEstablished;
+  bool _ntpConfigured;
   SafetyLockout _lastReportedLockout;
 
   String buildUrl(const String& path) const;
   void maintainWifi(uint32_t currentMillis);
+  bool isTimeSynchronized() const;
 };
 
 } // namespace SmartTank

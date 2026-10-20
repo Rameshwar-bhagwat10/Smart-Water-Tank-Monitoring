@@ -6,7 +6,10 @@ import {
   subscribeToAuthState,
   createOperatorUser,
   deleteOperatorUser,
-  getNextAvailableTankId
+  getNextAvailableTankId,
+  getAvailableTankOptions,
+  getConsistentTankName,
+  getAssignedTankIds
 } from './firebase/auth.js';
 import {
   subscribeToDatabaseConnection,
@@ -271,6 +274,12 @@ function renderLoginView() {
           <form id="login-form-local" class="auth-form">
             ${state.authError ? `<div class="auth-error" role="alert">${state.authError}</div>` : ''}
             
+            ${window.location.protocol === 'https:' ? `
+              <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 0.65rem 0.85rem; margin-bottom: 0.85rem; font-size: 0.775rem; color: #92400e; line-height: 1.4;">
+                🛡️ <strong>Browser Security Note (Mixed Content):</strong> Since this dashboard is served over HTTPS, your browser may block HTTP requests to <code>${state.localHostUrl}</code>. You can open the <a href="${state.localHostUrl}" target="_blank" style="color: #b45309; font-weight: 700; text-decoration: underline;">Local Embedded Controller Dashboard</a> directly in a new tab.
+              </div>
+            ` : ''}
+
             <div id="detected-tank-banner" style="background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(2, 132, 199, 0.2); border-radius: 10px; padding: 0.65rem 0.85rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;">
               <div style="display: flex; align-items: center; gap: 0.5rem;">
                 <span style="font-size: 1.1rem;">📡</span>
@@ -396,6 +405,9 @@ function renderLoginView() {
       try {
         res = await fetch(`${host}/api/live`);
       } catch (networkErr) {
+        if (window.location.protocol === 'https:') {
+          throw new Error(`Browser Mixed Content Block: Your HTTPS session cannot call HTTP ${host}. Please access http://192.168.4.1 directly in a new tab or switch to Cloud Mode.`);
+        }
         throw new Error(`Cannot reach controller at ${host}. Please ensure you are connected to the 'SmartTank' Wi-Fi network.`);
       }
 
@@ -727,10 +739,8 @@ function renderFleetOverviewView() {
 function renderOperatorManagementView() {
   const userEntries = Object.entries(state.allUsers);
   
-  // Dynamically compute the next available sequential tank ID
-  const nextTankId = getNextAvailableTankId(state.allTanks, state.allUsers);
-  const nextTankNumber = nextTankId.replace(/^tank-?/i, '');
-  const suggestedTankName = `Water Storage Unit ${nextTankNumber.toUpperCase()}`;
+  // Calculate unassigned tanks and consistent friendly names (excluding already assigned tanks)
+  const { available, defaultTankId, defaultTankName } = getAvailableTankOptions(state.allTanks, state.allUsers);
 
   return `
     <section style="display: flex; flex-direction: column; gap: 1.75rem;">
@@ -755,8 +765,8 @@ function renderOperatorManagementView() {
               This operator will be automatically bound to the next available storage unit in sequence.
             </div>
           </div>
-          <div class="auto-tank-badge">
-            Assigned: ${nextTankId.toUpperCase()}
+          <div class="auto-tank-badge" id="op-assigned-badge">
+            Assigned: ${defaultTankId.toUpperCase()}
           </div>
         </div>
 
@@ -783,15 +793,16 @@ function renderOperatorManagementView() {
             </div>
 
             <div class="form-group">
-              <label for="op-tank-id">Assigned Tank ID (Auto-Generated)</label>
-              <input 
-                type="text" 
-                id="op-tank-id" 
-                class="form-input" 
-                value="${nextTankId}" 
-                required 
-                style="font-family: var(--font-mono); font-weight: 600; color: #0284c7; background: #f0f9ff;" 
-              />
+              <label for="op-tank-id">Assigned Tank ID</label>
+              <select id="op-tank-id" class="form-input" style="font-family: var(--font-mono); font-weight: 600; color: #0284c7; background: #f0f9ff;">
+                ${available.map(opt => `
+                  <option value="${opt.id}" ${opt.id === defaultTankId ? 'selected' : ''}>
+                    ${opt.isNext ? `Auto: ${opt.id.toUpperCase()} (Next Available)` : `${opt.id} — ${opt.name}`}
+                  </option>
+                `).join('')}
+                <option value="custom">-- Custom Tank ID --</option>
+              </select>
+              <input type="text" id="op-custom-tank" class="form-input" placeholder="e.g. tank-04" style="display: none; margin-top: 0.5rem;" />
             </div>
 
             <div class="form-group">
@@ -800,8 +811,8 @@ function renderOperatorManagementView() {
                 type="text" 
                 id="op-tank-name" 
                 class="form-input" 
-                value="${suggestedTankName}" 
-                placeholder="e.g. Block A Overhead Tank" 
+                value="${defaultTankName}" 
+                placeholder="e.g. Water Storage Unit 01" 
               />
             </div>
 
@@ -1091,7 +1102,7 @@ function renderTankInspectorView(tankId) {
 // TAB 4: TANK PROVISIONING & HARDWARE WI-FI SETUP
 // ----------------------------------------------------
 function renderAdminProvisioningView() {
-  const nextTankId = getNextAvailableTankId(state.allTanks, state.allUsers);
+  const { available, defaultTankId, defaultTankName } = getAvailableTankOptions(state.allTanks, state.allUsers);
   const tankEntries = Object.entries(state.allTanks);
 
   return `
@@ -1132,10 +1143,11 @@ function renderAdminProvisioningView() {
             <div class="form-group">
               <label for="prov-tank-id">Assigned Tank ID</label>
               <select id="prov-tank-id" class="form-input">
-                <option value="${nextTankId}">Auto: ${nextTankId.toUpperCase()} (Next Available)</option>
-                <option value="tank-01">tank-01 — Ground / Sump Tank</option>
-                <option value="tank-02">tank-02 — Rooftop / Overhead Tank</option>
-                <option value="tank-03">tank-03 — Auxiliary Storage Tank</option>
+                ${available.map(opt => `
+                  <option value="${opt.id}" ${opt.id === defaultTankId ? 'selected' : ''}>
+                    ${opt.isNext ? `Auto: ${opt.id.toUpperCase()} (Next Available)` : `${opt.id} — ${opt.name}`}
+                  </option>
+                `).join('')}
                 <option value="custom">-- Custom Tank ID --</option>
               </select>
               <input type="text" id="prov-custom-tank" class="form-input" placeholder="e.g. tank-04" style="display: none; margin-top: 0.5rem;" />
@@ -1143,7 +1155,7 @@ function renderAdminProvisioningView() {
 
             <div class="form-group">
               <label for="prov-tank-name">Tank Friendly Name</label>
-              <input type="text" id="prov-tank-name" class="form-input" placeholder="e.g. Ground Sump Storage Unit" value="Storage Unit ${nextTankId.replace(/^tank-?/i, '').toUpperCase()}" />
+              <input type="text" id="prov-tank-name" class="form-input" placeholder="e.g. Water Storage Unit 01" value="${defaultTankName}" />
             </div>
 
             <div class="form-group">
@@ -1222,8 +1234,8 @@ function renderAdminProvisioningView() {
                 <label for="quick-tank-id">Target Tank</label>
                 <select id="quick-tank-id" class="form-input">
                   ${tankEntries.length > 0 ? tankEntries.map(([id, t]) => `
-                    <option value="${id}">${(t.name || id).toUpperCase()} (${id})</option>
-                  `).join('') : '<option value="tank-01">TANK-01</option>'}
+                    <option value="${id}">${(t.name || getConsistentTankName(id, state.allTanks)).toUpperCase()} (${id})</option>
+                  `).join('') : '<option value="tank-01">WATER STORAGE UNIT 01 (tank-01)</option>'}
                 </select>
               </div>
 
@@ -1551,14 +1563,75 @@ function attachAdminEventListeners() {
 
   // Operator Registration Form
   if (state.adminTab === 'operators') {
+    const opTankSelect = document.querySelector('#op-tank-id');
+    const opCustomTankInput = document.querySelector('#op-custom-tank');
+    const opTankNameInput = document.querySelector('#op-tank-name');
+    const opBadge = document.querySelector('#op-assigned-badge');
+
+    if (opTankSelect) {
+      opTankSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === 'custom') {
+          if (opCustomTankInput) {
+            opCustomTankInput.style.display = 'block';
+            opCustomTankInput.focus();
+          }
+        } else {
+          if (opCustomTankInput) opCustomTankInput.style.display = 'none';
+          if (opTankNameInput && val) {
+            opTankNameInput.value = getConsistentTankName(val, state.allTanks);
+          }
+          if (opBadge && val) {
+            opBadge.textContent = `Assigned: ${val.toUpperCase()}`;
+          }
+        }
+      });
+    }
+
+    if (opCustomTankInput) {
+      opCustomTankInput.addEventListener('input', (e) => {
+        let customVal = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        if (customVal && !customVal.startsWith('tank-')) {
+          customVal = 'tank-' + customVal;
+        }
+        if (opTankNameInput && customVal) {
+          opTankNameInput.value = getConsistentTankName(customVal, state.allTanks);
+        }
+        if (opBadge && customVal) {
+          opBadge.textContent = `Assigned: ${customVal.toUpperCase()}`;
+        }
+      });
+    }
+
     const createForm = document.querySelector('#create-operator-form');
     if (createForm) {
       createForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.querySelector('#op-email').value;
         const password = document.querySelector('#op-password').value;
-        const tankId = document.querySelector('#op-tank-id').value;
-        const tankName = document.querySelector('#op-tank-name').value;
+        let tankId = opTankSelect?.value || 'tank-01';
+        if (tankId === 'custom') {
+          tankId = opCustomTankInput?.value?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+          if (tankId && !tankId.startsWith('tank-')) {
+            tankId = 'tank-' + tankId;
+          }
+        }
+        if (!tankId) {
+          alert('Please select or specify a valid Tank ID.');
+          return;
+        }
+
+        const assignedTankIds = getAssignedTankIds(state.allTanks, state.allUsers);
+        if (assignedTankIds.has(tankId.toLowerCase())) {
+          state.userCreationFeedback = {
+            type: 'danger',
+            message: `Tank '${tankId.toUpperCase()}' is already assigned to an active operator. Each tank can only be assigned to one operator.`
+          };
+          render();
+          return;
+        }
+
+        const tankName = opTankNameInput?.value?.trim() || getConsistentTankName(tankId, state.allTanks);
 
         state.userCreationLoading = true;
         state.userCreationFeedback = null;
@@ -1612,13 +1685,27 @@ function attachAdminEventListeners() {
       tankSelect.addEventListener('change', (e) => {
         const val = e.target.value;
         if (val === 'custom') {
-          if (customTankInput) customTankInput.style.display = 'block';
+          if (customTankInput) {
+            customTankInput.style.display = 'block';
+            customTankInput.focus();
+          }
         } else {
           if (customTankInput) customTankInput.style.display = 'none';
           if (tankNameInput && val) {
-            const cleanNum = val.replace(/^tank-?/i, '');
-            tankNameInput.value = `Water Storage Unit ${cleanNum.toUpperCase()}`;
+            tankNameInput.value = getConsistentTankName(val, state.allTanks);
           }
+        }
+      });
+    }
+
+    if (customTankInput) {
+      customTankInput.addEventListener('input', (e) => {
+        let customVal = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        if (customVal && !customVal.startsWith('tank-')) {
+          customVal = 'tank-' + customVal;
+        }
+        if (tankNameInput && customVal) {
+          tankNameInput.value = getConsistentTankName(customVal, state.allTanks);
         }
       });
     }
@@ -1703,12 +1790,29 @@ function attachAdminEventListeners() {
         e.preventDefault();
         let selectedTank = tankSelect?.value || 'tank-01';
         if (selectedTank === 'custom') {
-          selectedTank = customTankInput?.value?.trim().toLowerCase() || 'tank-01';
-          if (!selectedTank.startsWith('tank-')) {
+          selectedTank = customTankInput?.value?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+          if (selectedTank && !selectedTank.startsWith('tank-')) {
             selectedTank = 'tank-' + selectedTank;
           }
         }
-        const tankName = tankNameInput?.value?.trim() || `Water Storage Unit ${selectedTank.replace(/^tank-?/i, '').toUpperCase()}`;
+        if (!selectedTank) {
+          alert('Please select or specify a valid Tank ID.');
+          return;
+        }
+
+        // Validate tank is not already assigned
+        const assignedTankIds = getAssignedTankIds(state.allTanks, state.allUsers);
+        if (assignedTankIds.has(selectedTank.toLowerCase())) {
+          state.provisioningFeedback = {
+            type: 'danger',
+            title: 'Tank Assignment Conflict',
+            message: `Tank '${selectedTank.toUpperCase()}' is already assigned to an active operator. Each tank can only be assigned to one operator.`
+          };
+          render();
+          return;
+        }
+
+        const tankName = tankNameInput?.value?.trim() || getConsistentTankName(selectedTank, state.allTanks);
         const email = document.querySelector('#prov-email')?.value?.trim();
         const password = document.querySelector('#prov-password')?.value;
         const host = hostInput?.value?.trim() || state.localHostUrl || 'http://192.168.4.1';
@@ -1739,6 +1843,7 @@ function attachAdminEventListeners() {
             params.append('ssid', wifiSsid);
             params.append('pass', wifiPass);
             params.append('tankId', selectedTank);
+            params.append('pin', 'admin123');
 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -1810,6 +1915,7 @@ function attachAdminEventListeners() {
           params.append('ssid', ssid);
           params.append('pass', pass);
           params.append('tankId', targetTank);
+          params.append('pin', 'admin123');
 
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 6000);
@@ -1937,6 +2043,7 @@ async function dispatchCommand(tankId, requestedMode, requestedPumpState) {
       params.append('tankId', tankId);
       params.append('mode', requestedMode);
       params.append('pumpState', requestedPumpState);
+      params.append('pin', 'admin123');
 
       const res = await fetch(`${state.localHostUrl}/api/command`, {
         method: 'POST',

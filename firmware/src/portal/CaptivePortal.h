@@ -13,7 +13,7 @@ public:
   CaptivePortal();
   ~CaptivePortal();
 
-  void start(const char* apName = nullptr);
+  void start(const char* apName = nullptr, const char* apPassword = nullptr);
   void stop();
   void handleClient();
   bool isComplete() const { return _isComplete; }

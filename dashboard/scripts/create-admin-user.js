@@ -3,11 +3,8 @@
  * Reads Firebase configuration from dashboard/.env.local.
  *
  * Usage:
- *   node scripts/create-admin-user.js [email] [password]
- *
- * Default Admin Credentials:
- *   Email:    admin@smartwatertank.local
- *   Password: AdminWaterTank2026!
+ *   node scripts/create-admin-user.js <email> <password>
+ *   OR set environment variables: ADMIN_EMAIL and ADMIN_PASSWORD
  */
 
 import fs from 'node:fs';
@@ -52,8 +49,17 @@ function loadEnv() {
   };
 }
 
-const ADMIN_EMAIL = process.argv[2] || 'admin@smartwatertank.local';
-const ADMIN_PASSWORD = process.argv[3] || 'AdminWaterTank2026!';
+const ADMIN_EMAIL = process.argv[2] || process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.argv[3] || process.env.ADMIN_PASSWORD;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+  console.error('\n[ERROR] Both admin email and password must be explicitly provided.');
+  console.error('Hardcoded fallback passwords have been removed (SEC-004).\n');
+  console.error('Usage:');
+  console.error('  node scripts/create-admin-user.js <admin_email> <admin_password>');
+  console.error('  OR: ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/create-admin-user.js\n');
+  process.exit(1);
+}
 
 async function main() {
   console.log('====================================================');
@@ -123,7 +129,7 @@ async function main() {
   console.log('====================================================');
   console.log(`  Portal URL:  http://localhost:5173/`);
   console.log(`  Email:       ${ADMIN_EMAIL}`);
-  console.log(`  Password:    ${ADMIN_PASSWORD}`);
+  console.log(`  Password:    [REDACTED / CONFIGURED]`);
   console.log(`  Role:        admin`);
   console.log(`  UID:         ${adminUser.uid}`);
   console.log('====================================================\n');

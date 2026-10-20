@@ -17,7 +17,9 @@ PumpController::PumpController(RelayDriver& relay,
       _lockout(SafetyLockout::NONE),
       _pumpStartTimeMs(0),
       _zeroFlowStartTimeMs(0),
-      _lastSwitchTimeMs(0) {}
+      _lastSwitchTimeMs(0),
+      _lastLevelPercent(0.0f),
+      _lastLevelValid(false) {}
 
 void PumpController::begin() {
   _relay.begin();
@@ -26,6 +28,8 @@ void PumpController::begin() {
   _pumpStartTimeMs = 0;
   _zeroFlowStartTimeMs = 0;
   _lastSwitchTimeMs = 0;
+  _lastLevelPercent = 0.0f;
+  _lastLevelValid = false;
 }
 
 bool PumpController::shouldAutoStart(float levelPercent, float autoStartPct, bool isLevelValid) {
@@ -64,12 +68,15 @@ void PumpController::applyPumpAction(bool on, uint32_t currentMillis) {
 }
 
 void PumpController::update(uint32_t currentMillis, float levelPercent, bool isLevelValid, float flowRateLpm, float currentA) {
+  _lastLevelPercent = levelPercent;
+  _lastLevelValid = isLevelValid;
+
   // 1. Mandatory Safety Interlock 1: Sensor Failure Handling
   if (!isLevelValid) {
     if (_relay.isPumpOn()) {
       applyPumpAction(false, currentMillis);
-      _lockout = SafetyLockout::SENSOR_FAULT;
     }
+    _lockout = SafetyLockout::SENSOR_FAULT;
     return;
   }
 
@@ -77,9 +84,16 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
   if (isHardCutoffTriggered(levelPercent, _hardCutoffPct, isLevelValid)) {
     if (_relay.isPumpOn()) {
       applyPumpAction(false, currentMillis);
-      _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
     }
+    _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
     return;
+  }
+
+  // Auto-clear high level or sensor fault lockout when safe reading returns
+  if (_lockout == SafetyLockout::HIGH_LEVEL_CUTOFF && levelPercent < _autoStopPct) {
+    _lockout = SafetyLockout::NONE;
+  } else if (_lockout == SafetyLockout::SENSOR_FAULT && isLevelValid) {
+    _lockout = SafetyLockout::NONE;
   }
 
   // 3. Mandatory Safety Interlock 3: Maximum Continuous Pump Runtime
@@ -142,6 +156,17 @@ CommandResult PumpController::requestManualPump(bool pumpOn, uint32_t currentMil
     // Check if safety lockout prevents startup
     if (_lockout != SafetyLockout::NONE) {
       return { false, "Command rejected: Safety lockout is active." };
+    }
+
+    // SAF-001: Pre-activation validation
+    if (!_lastLevelValid) {
+      _lockout = SafetyLockout::SENSOR_FAULT;
+      return { false, "Command rejected: Sensor reading is invalid or unavailable." };
+    }
+
+    if (_lastLevelPercent >= _hardCutoffPct) {
+      _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
+      return { false, "Command rejected: High-water level cutoff exceeded (>= 95%)." };
     }
 
     applyPumpAction(true, currentMillis);

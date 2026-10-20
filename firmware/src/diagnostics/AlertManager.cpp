@@ -2,11 +2,12 @@
 
 namespace SmartTank {
 
-AlertManager::AlertManager(uint8_t greenLedPin, uint8_t yellowLedPin, uint8_t redLedPin, uint8_t buzzerPin)
+AlertManager::AlertManager(uint8_t greenLedPin, uint8_t yellowLedPin, uint8_t redLedPin, uint8_t buzzerPin, bool redActiveLow)
     : _greenLed(greenLedPin),
       _yellowLed(yellowLedPin),
       _redLed(redLedPin),
       _buzzer(buzzerPin),
+      _redActiveLow(redActiveLow),
       _lastBlinkMillis(0),
       _blinkState(false),
       _chirpEndMillis(0) {}
@@ -19,7 +20,7 @@ void AlertManager::begin() {
 
   digitalWrite(_greenLed, LOW);
   digitalWrite(_yellowLed, LOW);
-  digitalWrite(_redLed, LOW);
+  digitalWrite(_redLed, _redActiveLow ? HIGH : LOW);
   digitalWrite(_buzzer, LOW);
 }
 
@@ -53,13 +54,14 @@ void AlertManager::update(uint32_t currentMillis, bool wifiConnected, bool pumpR
 
   // Red LED & Buzzer: Active on Safety Lockouts
   if (lockout != SafetyLockout::NONE) {
-    digitalWrite(_redLed, _blinkState ? HIGH : LOW);
+    bool ledEnergized = _blinkState;
+    digitalWrite(_redLed, _redActiveLow ? (ledEnergized ? LOW : HIGH) : (ledEnergized ? HIGH : LOW));
     // Beep buzzer intermittently on critical lockout
     if (_chirpEndMillis == 0) {
       digitalWrite(_buzzer, _blinkState ? HIGH : LOW);
     }
   } else {
-    digitalWrite(_redLed, LOW);
+    digitalWrite(_redLed, _redActiveLow ? HIGH : LOW);
   }
 }
 

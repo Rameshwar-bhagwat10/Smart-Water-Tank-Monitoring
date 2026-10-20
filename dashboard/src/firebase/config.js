@@ -8,7 +8,9 @@ import { getDatabase } from 'firebase/database';
  * an authorization mechanism. Access is enforced by Firebase Security Rules and Auth.
  */
 function getFirebaseConfig() {
-  const env = import.meta.env;
+  const env = (typeof import.meta !== 'undefined' && import.meta.env) 
+    ? import.meta.env 
+    : (typeof process !== 'undefined' && process.env ? process.env : {});
 
   const config = {
     apiKey: env.VITE_FIREBASE_API_KEY,

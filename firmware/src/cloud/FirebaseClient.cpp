@@ -13,6 +13,8 @@ FirebaseClient::FirebaseClient(const String& host, const String& authKey, const 
     _lastWifiCheckMs(0),
     _lastTelemetryPublishMs(0),
     _lastCommandPollMs(0),
+    _startupBaselineEstablished(false),
+    _ntpConfigured(false),
     _lastReportedLockout(SafetyLockout::NONE) {
   _lastProcessedCommandId[0] = '\0';
 }
@@ -20,6 +22,7 @@ FirebaseClient::FirebaseClient(const String& host, const String& authKey, const 
 void FirebaseClient::begin(const String& wifiSsid, const String& wifiPassword) {
   _ssid = wifiSsid;
   _pass = wifiPassword;
+  _startupBaselineEstablished = false;
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -34,11 +37,22 @@ bool FirebaseClient::isWifiConnected() const {
   return (WiFi.status() == WL_CONNECTED);
 }
 
+bool FirebaseClient::isTimeSynchronized() const {
+  time_t now = time(nullptr);
+  return (now > 1700000000); // Valid UTC timestamp (2023+)
+}
+
 void FirebaseClient::maintainWifi(uint32_t currentMillis) {
   if (currentMillis - _lastWifiCheckMs < 5000) {
     return;
   }
   _lastWifiCheckMs = currentMillis;
+
+  if (WiFi.status() == WL_CONNECTED && !_ntpConfigured) {
+    configTime(0, 0, "pool.ntp.org", "time.google.com");
+    _ntpConfigured = true;
+    Serial.println(F("[Cloud] Synchronizing network time via NTP (UTC)..."));
+  }
 
   if (WiFi.status() != WL_CONNECTED && _ssid.length() > 0) {
     Serial.println("[Cloud] Wi-Fi link down. Attempting reconnect...");
@@ -145,6 +159,10 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
   http.end();
 
   if (payload.length() == 0 || payload == "null") {
+    if (!_startupBaselineEstablished) {
+      _startupBaselineEstablished = true;
+      Serial.println(F("[Cloud] Startup baseline established (no active command present in database)."));
+    }
     return false;
   }
 
@@ -158,17 +176,53 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
   const char* cmdId = doc["commandId"] | "";
   const char* reqMode = doc["requestedMode"] | "";
   const char* reqState = doc["requestedPumpState"] | "";
+  double requestedAt = doc["requestedAt"] | 0.0;
 
   if (strlen(cmdId) == 0) {
+    if (!_startupBaselineEstablished) {
+      _startupBaselineEstablished = true;
+    }
     return false;
   }
 
-  // Deduplicate: avoid re-processing identical command
+  // --------------------------------------------------------------------------
+  // CMD-001 Remediation 1: Startup Baseline Establishment
+  // A historical command existing in RTDB before boot MUST NOT trigger pump activation!
+  // --------------------------------------------------------------------------
+  if (!_startupBaselineEstablished) {
+    strncpy(_lastProcessedCommandId, cmdId, sizeof(_lastProcessedCommandId) - 1);
+    _lastProcessedCommandId[sizeof(_lastProcessedCommandId) - 1] = '\0';
+    _startupBaselineEstablished = true;
+    Serial.printf("[Cloud] Startup baseline established. Existing command '%s' marked processed without execution (CMD-001 Stale Replay Protection).\n", cmdId);
+    return false;
+  }
+
+  // --------------------------------------------------------------------------
+  // CMD-001 Remediation 2: Command Deduplication
+  // Avoid re-executing already processed command ID
+  // --------------------------------------------------------------------------
   if (strcmp(_lastProcessedCommandId, cmdId) == 0) {
     return false;
   }
 
-  Serial.printf("[Cloud] Received Command for %s: ID=%s, Mode=%s, PumpState=%s\n", _tankId.c_str(), cmdId, reqMode, reqState);
+  // --------------------------------------------------------------------------
+  // CMD-001 Remediation 3: Command Expiry & TTL Verification
+  // If system time is synchronized via NTP, reject commands older than 60 seconds
+  // --------------------------------------------------------------------------
+  if (isTimeSynchronized() && requestedAt > 0.0) {
+    time_t nowSec = time(nullptr);
+    uint64_t nowMs = (uint64_t)nowSec * 1000ULL;
+    uint64_t cmdReqMs = (uint64_t)requestedAt;
+    if (nowMs > cmdReqMs && (nowMs - cmdReqMs) > 60000ULL) {
+      Serial.printf("[Cloud] Command '%s' rejected: Expired (Age: %llu ms > 60000 ms TTL limit).\n", cmdId, (nowMs - cmdReqMs));
+      sendCommandAck(cmdId, "REJECTED", "Command expired: Timestamp older than 60s TTL threshold");
+      strncpy(_lastProcessedCommandId, cmdId, sizeof(_lastProcessedCommandId) - 1);
+      _lastProcessedCommandId[sizeof(_lastProcessedCommandId) - 1] = '\0';
+      return false;
+    }
+  }
+
+  Serial.printf("[Cloud] Processing Fresh Command for %s: ID=%s, Mode=%s, PumpState=%s\n", _tankId.c_str(), cmdId, reqMode, reqState);
 
   // Acknowledge receipt
   sendCommandAck(cmdId, "RECEIVED", "Command received by edge controller");
@@ -182,6 +236,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
   } else {
     sendCommandAck(cmdId, "REJECTED", "Invalid control mode requested");
     strncpy(_lastProcessedCommandId, cmdId, sizeof(_lastProcessedCommandId) - 1);
+    _lastProcessedCommandId[sizeof(_lastProcessedCommandId) - 1] = '\0';
     return false;
   }
 
@@ -194,6 +249,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
   } else {
     sendCommandAck(cmdId, "REJECTED", "Invalid pump state requested");
     strncpy(_lastProcessedCommandId, cmdId, sizeof(_lastProcessedCommandId) - 1);
+    _lastProcessedCommandId[sizeof(_lastProcessedCommandId) - 1] = '\0';
     return false;
   }
 
@@ -208,12 +264,14 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
     if (!cmdRes.accepted) {
       sendCommandAck(cmdId, "REJECTED", cmdRes.reason ? cmdRes.reason : "Safety interlock lockout");
       strncpy(_lastProcessedCommandId, cmdId, sizeof(_lastProcessedCommandId) - 1);
+      _lastProcessedCommandId[sizeof(_lastProcessedCommandId) - 1] = '\0';
       return false;
     }
   }
 
   sendCommandAck(cmdId, "APPLIED", "Command successfully applied to relay output");
   strncpy(_lastProcessedCommandId, cmdId, sizeof(_lastProcessedCommandId) - 1);
+  _lastProcessedCommandId[sizeof(_lastProcessedCommandId) - 1] = '\0';
   return true;
 }
 
