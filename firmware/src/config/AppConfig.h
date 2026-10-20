@@ -26,7 +26,7 @@ constexpr bool RELAY_ACTIVE_LOW    = true;
 constexpr bool RED_LED_ACTIVE_LOW  = true;  // D4/GPIO2 must be pulled HIGH at boot for normal flash execution
 
 // WPA2-PSK Hotspot Passphrase for SoftAP (SEC-003: minimum 8 characters)
-constexpr const char* DEFAULT_AP_PASSWORD = "WaterTank2026!";
+constexpr const char* DEFAULT_AP_PASSWORD = "SmartWaterTank";
 
 // ============================================================================
 // SENSOR CALIBRATION DEFAULTS
@@ -45,6 +45,7 @@ constexpr float ACS712_SENSITIVITY_MV_PER_A = 185.0f;
 constexpr float ACS712_QUIESCENT_MV         = 2500.0f; // Nominal VCC / 2
 constexpr float ADC_VOLTAGE_REF_MV          = 3300.0f; // NodeMCU A0 external divider range
 constexpr int   ADC_MAX_COUNTS              = 1023;
+constexpr float ACS712_DIVIDER_RATIO        = 18.0f / (10.0f + 18.0f); // ~0.642857f (10k upper, 18k lower)
 
 // ============================================================================
 // SAFETY INTERLOCKS & OPERATING THRESHOLDS
@@ -56,7 +57,7 @@ constexpr float HARD_CUTOFF_LEVEL_PERCENT  = 95.0f; // Strict cutoff in ANY mode
 constexpr uint32_t MAX_PUMP_RUNTIME_MS        = 20 * 60 * 1000UL; // 20 min max runtime
 constexpr uint32_t DRY_RUN_GRACE_PERIOD_MS    = 15000UL;          // 15s startup grace
 constexpr uint32_t DRY_RUN_DETECTION_DELAY_MS = 5000UL;           // 5s sustained 0-flow trip
-constexpr uint32_t MIN_SWITCHING_INTERVAL_MS  = 5000UL;           // 5s anti-chatter
+constexpr uint32_t MIN_SWITCHING_INTERVAL_MS  = 1000UL;           // 1s anti-chatter for responsive testing
 
 // ============================================================================
 // CLOUD COMMUNICATION TIMERS

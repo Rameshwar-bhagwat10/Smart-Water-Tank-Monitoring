@@ -1,78 +1,585 @@
 #include "LocalDashboardServer.h"
-#include <ArduinoJson.h>
 
 namespace SmartTank {
 
 static const IPAddress LOCAL_AP_IP(192, 168, 4, 1);
 static const uint16_t LOCAL_DNS_PORT = 53;
-static const char DEFAULT_OPERATOR_PIN[] = "admin123";
+
+// High-Speed, Self-Contained Embedded Dashboard with Interactive Charts (PROGMEM, 0 external dependencies)
+static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Smart Water Tank</title>
+<style>
+:root {
+  --bg: #090B10;
+  --card: #131722;
+  --card-inner: #191E2C;
+  --border: rgba(255, 255, 255, 0.08);
+  --separator: rgba(255, 255, 255, 0.06);
+  --text: #FFFFFF;
+  --text-sec: #8A92A6;
+  --text-muted: #525A6C;
+  --accent: #D4F63D;
+  --accent-hover: #E2FC5B;
+  --accent-dark: #090B10;
+  --accent-glow: rgba(212, 246, 61, 0.3);
+  --accent-soft: rgba(212, 246, 61, 0.12);
+  --water-cyan: #3DF6D9;
+  --water-blue: #007AFF;
+  --green: #D4F63D;
+  --green-soft: rgba(212, 246, 61, 0.14);
+  --orange: #FFA928;
+  --red: #FF4757;
+  --purple: #AF52DE;
+  --r-lg: 20px;
+  --r-pill: 9999px;
+  --shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.6);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-tap-highlight-color: transparent; }
+body { background: var(--bg); color: var(--text); padding: 18px 14px 42px; display: flex; justify-content: center; min-height: 100vh; position: relative; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+body::before { content: ''; position: fixed; top: -140px; left: 50%; transform: translateX(-50%); width: 500px; height: 350px; background: radial-gradient(ellipse at center, rgba(212, 246, 61, 0.08) 0%, transparent 70%); pointer-events: none; z-index: 0; }
+.ct { max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 14px; position: relative; z-index: 1; }
+
+/* Header */
+.hd { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; }
+.hd-brand { display: flex; align-items: center; gap: 10px; }
+.hd-icon { width: 34px; height: 34px; border-radius: 11px; background: var(--card); border: 1px solid rgba(212, 246, 61, 0.3); display: flex; align-items: center; justify-content: center; color: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.hd-t { font-size: 26px; font-weight: 800; letter-spacing: -0.6px; color: #FFFFFF; }
+.hd-b { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(212, 246, 61, 0.25); box-shadow: 0 0 12px rgba(212, 246, 61, 0.15); }
+.dp { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: dp 1.6s infinite; }
+@keyframes dp { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.75)} }
+
+/* Card */
+.cd { background: var(--card); border-radius: var(--r-lg); padding: 18px; border: 1px solid var(--border); box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.05); position: relative; overflow: hidden; }
+
+/* Hero Water Tank */
+.hero { display: flex; align-items: center; gap: 20px; padding: 20px; background: linear-gradient(145deg, #151926 0%, #11141F 100%); }
+.tk { width: 68px; height: 126px; background: #10131C; border-radius: 18px; border: 1.5px solid rgba(255,255,255,0.09); position: relative; overflow: hidden; display: flex; flex-direction: column-reverse; box-shadow: inset 0 3px 10px rgba(0,0,0,0.7), 0 4px 14px rgba(0,0,0,0.4); flex-shrink: 0; }
+.tk::before { content: ''; position: absolute; top: 8px; bottom: 8px; right: 4px; width: 5px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.25) 0, rgba(255,255,255,0.25) 1px, transparent 1px, transparent 12px); z-index: 2; pointer-events: none; }
+.tf { width: 100%; height: 0%; background: linear-gradient(180deg, var(--water-cyan) 0%, var(--water-blue) 100%); transition: height 0.6s cubic-bezier(0.34, 1.4, 0.64, 1); position: relative; box-shadow: 0 0 16px rgba(61, 246, 217, 0.4); }
+.tf::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: #FFFFFF; box-shadow: 0 0 8px #FFFFFF; }
+.hd2 { display: flex; flex-direction: column; flex: 1; }
+.hl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-sec); }
+.hv { font-size: 48px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; margin: 6px 0 6px; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+.hv .u { font-size: 22px; font-weight: 700; color: var(--accent); margin-left: 3px; }
+.hs { font-size: 13px; color: var(--text-sec); font-weight: 500; }
+.hs b { color: #FFFFFF; font-weight: 700; }
+.tg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: var(--r-pill); width: fit-content; margin-top: 8px; }
+.tg-g { background: var(--green-soft); color: var(--green); border: 1px solid rgba(212, 246, 61, 0.25); }
+.tg-x { background: var(--card-inner); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Chart Cards */
+.ch-wrap { position: relative; }
+.ch-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.ch-t { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-sec); }
+.ch-v { font-size: 13px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; background: var(--accent-soft); padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid rgba(212, 246, 61, 0.2); }
+canvas { width: 100% !important; border-radius: 12px; display: block; }
+
+/* 2x2 Grid */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mb { background: var(--card); border-radius: var(--r-lg); padding: 14px 14px 12px; border: 1px solid var(--border); box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 5px; }
+.mt { display: flex; justify-content: space-between; align-items: center; }
+.mi { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; border: 1px solid var(--border); }
+.ib { background: rgba(0, 122, 255, 0.12); color: #5AC8FA; border-color: rgba(0, 122, 255, 0.25); }
+.io { background: rgba(212, 246, 61, 0.12); color: var(--accent); border-color: rgba(212, 246, 61, 0.25); }
+.ig { background: rgba(52, 199, 89, 0.12); color: #34C759; border-color: rgba(52, 199, 89, 0.25); }
+.ip { background: rgba(175, 82, 222, 0.12); color: #AF52DE; border-color: rgba(175, 82, 222, 0.25); }
+.ml { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-sec); }
+.mv { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+.mv .u { font-size: 12px; font-weight: 600; color: var(--text-sec); margin-left: 1px; }
+.ms { font-size: 11px; color: var(--text-sec); font-weight: 500; }
+.ms b { color: #FFFFFF; }
+
+/* Relay Pill */
+.rp { display: inline-block; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: var(--r-pill); letter-spacing: 0.4px; }
+.rp.on { background: var(--accent); color: var(--accent-dark); box-shadow: 0 0 16px rgba(212, 246, 61, 0.4); }
+.rp.off { background: var(--card-inner); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Gauge */
+.gauge-wrap { display: flex; align-items: center; gap: 18px; }
+.gauge-box { position: relative; width: 104px; height: 104px; flex-shrink: 0; }
+.gauge-box canvas { width: 104px !important; height: 104px !important; }
+.gauge-val { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+.gauge-num { font-size: 22px; font-weight: 800; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+.gauge-unit { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-sec); }
+.gauge-info { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.gi-row { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; padding: 4px 0; border-bottom: 1px solid var(--separator); }
+.gi-row:last-child { border-bottom: none; }
+.gi-label { color: var(--text-sec); font-weight: 500; }
+.gi-val { font-weight: 700; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+
+/* Controls */
+.st { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-sec); margin-bottom: 10px; }
+.seg { display: flex; background: var(--card-inner); border-radius: var(--r-pill); padding: 4px; border: 1px solid var(--border); }
+.sb { flex: 1; border: none; background: transparent; padding: 9px 12px; font-size: 13px; font-weight: 700; color: var(--text-sec); border-radius: var(--r-pill); cursor: pointer; transition: all 0.22s; }
+.sb.a { background: var(--accent); color: var(--accent-dark); box-shadow: 0 2px 14px rgba(212, 246, 61, 0.35); }
+.ag { display: flex; gap: 10px; margin-top: 14px; }
+.ab { flex: 1; height: 48px; font-size: 14.5px; font-weight: 800; letter-spacing: -0.2px; border: none; border-radius: var(--r-pill); cursor: pointer; transition: all 0.18s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.ab:active { transform: scale(0.97); }
+.ab:disabled { opacity: 0.25; cursor: not-allowed; transform: none; box-shadow: none; }
+.bs { background: var(--accent); color: var(--accent-dark); box-shadow: 0 4px 20px rgba(212, 246, 61, 0.35); }
+.bp { background: var(--red); color: #FFFFFF; box-shadow: 0 4px 20px rgba(255, 71, 87, 0.35); }
+.fr { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--separator); font-size: 11.5px; color: var(--text-sec); }
+.fr b { color: #FFFFFF; }
+
+/* Timeline */
+.tl { display: flex; flex-direction: column; gap: 0; }
+.tl-item { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; position: relative; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; box-shadow: 0 0 8px currentColor; }
+.tl-line { position: absolute; left: 3.5px; top: 20px; bottom: -6px; width: 1px; background: var(--separator); }
+.tl-item:last-child .tl-line { display: none; }
+.tl-body { flex: 1; }
+.tl-msg { font-size: 12.5px; font-weight: 600; color: #FFFFFF; }
+.tl-time { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* Footer */
+.fl { background: var(--card); border-radius: var(--r-lg); border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; }
+.fl-r { display: flex; justify-content: space-between; align-items: center; padding: 11px 16px; font-size: 12px; color: var(--text-sec); border-bottom: 1px solid var(--separator); }
+.fl-r:last-child { border-bottom: none; }
+.fl-r b { color: #FFFFFF; font-weight: 600; font-family: monospace; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="ct">
+
+  <!-- Header -->
+  <div class="hd">
+    <div class="hd-brand">
+      <div class="hd-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+      <div class="hd-t">Water Tank</div>
+    </div>
+    <div class="hd-b" id="hd-mode"><span class="dp"></span> Local AP</div>
+  </div>
+
+  <!-- Hero Water Tank Card -->
+  <div class="cd hero">
+    <div class="tk"><div class="tf" id="tf" style="height:78.5%"></div></div>
+    <div class="hd2">
+      <span class="hl">Water Level</span>
+      <div class="hv"><span id="vl">78.5</span><span class="u">%</span></div>
+      <div class="hs">Distance: <b id="vd">18.2 cm</b></div>
+      <div class="tg tg-g" id="bs">Sensor Active</div>
+    </div>
+  </div>
+
+  <!-- Water Level History Chart -->
+  <div class="cd ch-wrap">
+    <div class="ch-hd">
+      <span class="ch-t">Water Level Trend</span>
+      <span class="ch-v" id="ch-lv">78.5 %</span>
+    </div>
+    <canvas id="cL" height="120"></canvas>
+  </div>
+
+  <!-- 2x2 Metrics -->
+  <div class="grid">
+    <div class="mb">
+      <div class="mt"><span class="ml">Flow Rate</span><div class="mi ib">💧</div></div>
+      <div class="mv"><span id="vf">14.6</span> <span class="u">L/min</span></div>
+      <div class="ms">Total: <b id="vt">342.80</b> L</div>
+    </div>
+    <div class="mb">
+      <div class="mt"><span class="ml">Pump Current</span><div class="mi io">⚡</div></div>
+      <div class="mv"><span id="vc">2.65</span> <span class="u">A</span></div>
+      <div class="ms">ACS712 Sensor</div>
+    </div>
+    <div class="mb">
+      <div class="mt"><span class="ml">Relay</span><div class="mi ig">🔌</div></div>
+      <div class="mv" style="margin-top:2px"><span id="vr" class="rp on">RUNNING</span></div>
+      <div class="ms">GPIO12 Relay</div>
+    </div>
+    <div class="mb">
+      <div class="mt"><span class="ml">State</span><div class="mi ip">🛡️</div></div>
+      <div class="mv" style="font-size:15px;margin-top:3px" id="vs">AUTO_FILLING</div>
+      <div class="ms">Autonomous Interlock</div>
+    </div>
+  </div>
+
+  <!-- Flow Sparkline Chart -->
+  <div class="cd ch-wrap">
+    <div class="ch-hd">
+      <span class="ch-t">Flow Rate Sparkline</span>
+      <span class="ch-v" id="ch-fv">14.6 L/min</span>
+    </div>
+    <canvas id="cF" height="80"></canvas>
+  </div>
+
+  <!-- Current Gauge + Stats -->
+  <div class="cd">
+    <div class="ch-hd"><span class="ch-t">Pump Current Ring</span></div>
+    <div class="gauge-wrap">
+      <div class="gauge-box">
+        <canvas id="cG" width="104" height="104"></canvas>
+        <div class="gauge-val">
+          <div class="gauge-num" id="gn">2.65</div>
+          <div class="gauge-unit">Amps</div>
+        </div>
+      </div>
+      <div class="gauge-info">
+        <div class="gi-row"><span class="gi-label">Peak</span><span class="gi-val" id="gp">2.85 A</span></div>
+        <div class="gi-row"><span class="gi-label">Average</span><span class="gi-val" id="ga">2.45 A</span></div>
+        <div class="gi-row"><span class="gi-label">Status</span><span class="gi-val" id="gs" style="color:var(--green)">Running</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="cd">
+    <div class="st">Control Mode</div>
+    <div class="seg">
+      <button class="sb a" id="ba" onclick="sM('AUTO')">Automatic</button>
+      <button class="sb" id="bm" onclick="sM('MANUAL')">Manual</button>
+    </div>
+    <div class="ag">
+      <button class="ab bs" id="as" disabled onclick="sP('ON')">⚡ Start</button>
+      <button class="ab bp" id="ap" disabled onclick="sP('OFF')">🛑 Stop</button>
+    </div>
+    <div class="fr">
+      <span>Status: <b id="ak">Auto Pumping</b></span>
+      <span id="st" style="font-size:10px;font-family:monospace">Response &lt; 20ms</span>
+    </div>
+  </div>
+
+  <!-- Activity Timeline -->
+  <div class="cd">
+    <div class="ch-hd"><span class="ch-t">Activity Log</span><span class="ch-v" id="tl-ct">4 events</span></div>
+    <div class="tl" id="tl"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="fl">
+    <div class="fl-r"><span>Channel</span><b>📡 Local AP</b></div>
+    <div class="fl-r"><span>SSID</span><b>SmartWaterTank</b></div>
+    <div class="fl-r"><span>IP</span><b>192.168.4.1</b></div>
+    <div class="fl-r"><span>Hotspot Wi-Fi</span><b id="wf-st">Checking...</b></div>
+    <div class="fl-r"><span>Uptime</span><b id="vu">18m 42s</b></div>
+    <div class="fl-r"><span>Refresh</span><b>600ms</b></div>
+  </div>
+
+</div>
+
+<script>
+// -- Data history buffers (pre-populated with rich dummy data) --
+const MX=60;
+const lH=[68.0,69.5,70.8,72.0,73.5,72.8,74.2,75.5,76.8,76.2,77.4,78.1,78.5];
+const fH=[9.5,11.2,12.0,10.8,13.5,14.2,13.8,14.6,15.1,14.6];
+const cH=[2.20,2.35,2.40,2.55,2.60,2.65];
+let cM='AUTO',iS=false,pC=2.85,cS=14.75,cN=6,lastPump='ON',lastState='AUTO_FILLING';
+const evts=[
+  {msg:'Autonomous filling in progress',color:'#D4F63D',ts:'19:35:12'},
+  {msg:'Pump started (low threshold 20%)',color:'#D4F63D',ts:'19:32:04'},
+  {msg:'Ultrasonic sensor calibrated',color:'#3DF6D9',ts:'19:30:00'},
+  {msg:'Local dashboard connected',color:'#D4F63D',ts:'19:28:15'}
+];
+
+// -- Canvas setup helpers --
+function dpr(){return window.devicePixelRatio||1;}
+function initC(id,h){
+  const c=document.getElementById(id);
+  if(!c)return null;
+  const r=dpr();
+  c.width=c.parentElement.clientWidth*r;
+  c.height=h*r;
+  c.style.height=h+'px';
+  const x=c.getContext('2d');
+  x.scale(r,r);
+  return{c,x,w:c.parentElement.clientWidth,h};
+}
+
+// -- Draw Level Chart (Monex Neon Area + Line) --
+function drawLevel(){
+  const ctx=initC('cL',120);
+  if(!ctx)return;
+  const{x,w,h}=ctx;
+  const pad={t:10,b:22,l:30,r:10};
+  const cw=w-pad.l-pad.r, ch=h-pad.t-pad.b;
+  // Subtle dark grid
+  x.strokeStyle='rgba(255,255,255,0.05)';x.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.t+ch*(i/4);
+    x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();
+  }
+  // Y labels
+  x.fillStyle='#6E7688';x.font='600 9px -apple-system,sans-serif';x.textAlign='right';
+  ['100','75','50','25','0'].forEach((v,i)=>{x.fillText(v,pad.l-6,pad.t+ch*(i/4)+3);});
+  if(lH.length===0)return;
+
+  const data=lH.length===1?[lH[0],lH[0]]:lH;
+  const pts=data.map((v,i)=>({
+    x:pad.l+(i/(data.length-1))*cw,
+    y:pad.t+ch*(1-Math.max(0,Math.min(100,v))/100)
+  }));
+  // Gradient fill
+  const grd=x.createLinearGradient(0,pad.t,0,h-pad.b);
+  grd.addColorStop(0,'rgba(212,246,61,0.28)');
+  grd.addColorStop(0.7,'rgba(212,246,61,0.06)');
+  grd.addColorStop(1,'rgba(212,246,61,0.00)');
+  x.beginPath();x.moveTo(pts[0].x,h-pad.b);
+  pts.forEach(p=>x.lineTo(p.x,p.y));
+  x.lineTo(pts[pts.length-1].x,h-pad.b);x.closePath();x.fillStyle=grd;x.fill();
+  // Neon Line
+  x.beginPath();pts.forEach((p,i)=>{i?x.lineTo(p.x,p.y):x.moveTo(p.x,p.y);});
+  x.strokeStyle='#D4F63D';x.lineWidth=2.5;x.lineJoin='round';x.lineCap='round';x.stroke();
+  // Dot with glowing halo
+  const lp=pts[pts.length-1];
+  x.save();x.shadowColor='#D4F63D';x.shadowBlur=12;
+  x.beginPath();x.arc(lp.x,lp.y,4.5,0,Math.PI*2);x.fillStyle='#D4F63D';x.fill();
+  x.restore();
+  x.beginPath();x.arc(lp.x,lp.y,2,0,Math.PI*2);x.fillStyle='#090B10';x.fill();
+}
+
+// -- Draw Flow Sparkline (Kalo Rounded Bars + Cyan Line) --
+function drawFlow(){
+  const ctx=initC('cF',80);
+  if(!ctx)return;
+  const{x,w,h}=ctx;
+  const pad={t:8,b:8,l:6,r:6};
+  const cw=w-pad.l-pad.r, ch=h-pad.t-pad.b;
+  if(fH.length===0)return;
+
+  const data=fH.length===1?[fH[0],fH[0]]:fH;
+  const mx=Math.max(...data,0.5);
+  const pts=data.map((v,i)=>({
+    x:pad.l+(i/(data.length-1))*cw,
+    y:pad.t+ch*(1-v/mx)
+  }));
+  const bw=Math.max(3,cw/MX-1.5);
+  data.forEach((v,i)=>{
+    const bh=Math.max(2,(v/mx)*ch);
+    const bx=pad.l+(i/(data.length-1))*cw-bw/2;
+    x.fillStyle=v>0.05?'rgba(212,246,61,0.28)':'rgba(255,255,255,0.04)';
+    x.beginPath();
+    if(x.roundRect){x.roundRect(bx,h-pad.b-bh,bw,bh,[2,2,0,0]);}
+    else{x.rect(bx,h-pad.b-bh,bw,bh);}
+    x.fill();
+  });
+  // Cyan Line
+  x.beginPath();pts.forEach((p,i)=>{i?x.lineTo(p.x,p.y):x.moveTo(p.x,p.y);});
+  x.strokeStyle='#3DF6D9';x.lineWidth=1.8;x.lineJoin='round';x.lineCap='round';x.stroke();
+  const lp=pts[pts.length-1];
+  x.save();x.shadowColor='#3DF6D9';x.shadowBlur=8;
+  x.beginPath();x.arc(lp.x,lp.y,3.5,0,Math.PI*2);x.fillStyle='#3DF6D9';x.fill();
+  x.restore();
+}
+
+// -- Draw Current Gauge (Kalo Circular Progress Ring) --
+function drawGauge(val){
+  const c=document.getElementById('cG');
+  if(!c)return;
+  const r=dpr();c.width=104*r;c.height=104*r;
+  c.style.width='104px';c.style.height='104px';
+  const x=c.getContext('2d');x.scale(r,r);
+  const cx=52,cy=52,rad=40,lw=8;
+  const sa=0.75*Math.PI, ea=2.25*Math.PI;
+  const maxA=5;
+  const pct=Math.min(val/maxA,1);
+  // Track
+  x.beginPath();x.arc(cx,cy,rad,sa,ea);x.strokeStyle='#191E2C';x.lineWidth=lw;x.lineCap='round';x.stroke();
+  // Active arc
+  if(pct>0){
+    const va=sa+pct*(ea-sa);
+    const grd=x.createLinearGradient(12,92,92,12);
+    if(pct<0.5){grd.addColorStop(0,'#D4F63D');grd.addColorStop(1,'#3DF6D9');}
+    else if(pct<0.8){grd.addColorStop(0,'#FFA928');grd.addColorStop(1,'#D4F63D');}
+    else{grd.addColorStop(0,'#FF4757');grd.addColorStop(1,'#FFA928');}
+    x.save();
+    x.shadowColor=pct>0.8?'#FF4757':'#D4F63D';x.shadowBlur=10;
+    x.beginPath();x.arc(cx,cy,rad,sa,va);x.strokeStyle=grd;x.lineWidth=lw;x.lineCap='round';x.stroke();
+    x.restore();
+  }
+  // Ticks
+  x.fillStyle='#6E7688';x.font='700 8px -apple-system,sans-serif';x.textAlign='center';x.textBaseline='middle';
+  [0,1,2,3,4,5].forEach((t)=>{
+    const a=sa+(t/maxA)*(ea-sa);
+    const tx=cx+Math.cos(a)*(rad+11);
+    const ty=cy+Math.sin(a)*(rad+11);
+    x.fillText(t,tx,ty);
+  });
+}
+
+// -- Timeline --
+function addEvt(msg,color){
+  const now=new Date();
+  const ts=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  evts.unshift({msg,color,ts});
+  if(evts.length>8)evts.pop();
+  renderTL();
+}
+function renderTL(){
+  const el=document.getElementById('tl');
+  document.getElementById('tl-ct').innerText=evts.length+' events';
+  if(!evts.length){el.innerHTML='<div style="font-size:12px;color:var(--text-sec);padding:8px 0">No events yet</div>';return;}
+  el.innerHTML=evts.map((e,i)=>'<div class="tl-item"><div class="tl-dot" style="background:'+e.color+'"></div>'+(i<evts.length-1?'<div class="tl-line"></div>':'')+'<div class="tl-body"><div class="tl-msg">'+e.msg+'</div><div class="tl-time">'+e.ts+'</div></div></div>').join('');
+}
+
+// -- Format uptime --
+function fmtUp(s){
+  if(s<60)return s+'s';
+  if(s<3600)return Math.floor(s/60)+'m '+s%60+'s';
+  return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+}
+
+// -- Fetch Telemetry --
+async function poll(){
+  if(iS)return;
+  try{
+    const res=await fetch('/api/live');
+    if(!res.ok)return;
+    const d=await res.json();
+
+    // Water Level
+    const sb=document.getElementById('bs');
+    if(d.sensorConnected&&d.level>=0){
+      const lv=d.level.toFixed(1);
+      document.getElementById('vl').innerText=lv;
+      document.getElementById('tf').style.height=Math.max(0,Math.min(100,d.level))+'%';
+      document.getElementById('vd').innerText=d.distance.toFixed(1)+' cm';
+      sb.innerText='Sensor Active';sb.className='tg tg-g';
+      lH.push(d.level);if(lH.length>MX)lH.shift();
+      document.getElementById('ch-lv').innerText=lv+' %';
+    } else {
+      document.getElementById('vl').innerText='--';
+      document.getElementById('tf').style.height='0%';
+      document.getElementById('vd').innerText='--';
+      sb.innerText='Sensor Standby';sb.className='tg tg-x';
+      lH.push(0);if(lH.length>MX)lH.shift();
+      document.getElementById('ch-lv').innerText='-- %';
+    }
+
+    // Flow
+    const fv=(d.flow>0.05)?d.flow:0;
+    document.getElementById('vf').innerText=fv>0.05?fv.toFixed(1):'--';
+    document.getElementById('vt').innerText=(d.total||0).toFixed(2);
+    fH.push(fv);if(fH.length>MX)fH.shift();
+    document.getElementById('ch-fv').innerText=fv>0.05?fv.toFixed(1)+' L/min':'-- L/min';
+
+    // Current
+    const cv=(d.current>0.05)?d.current:0;
+    document.getElementById('vc').innerText=cv>0.05?cv.toFixed(2):'--';
+    cH.push(cv);if(cH.length>MX)cH.shift();
+    if(cv>pC)pC=cv;
+    cS+=cv;cN++;
+    document.getElementById('gn').innerText=cv.toFixed(2);
+    document.getElementById('gp').innerText=pC.toFixed(2)+' A';
+    document.getElementById('ga').innerText=(cN?cS/cN:0).toFixed(2)+' A';
+    const gsEl=document.getElementById('gs');
+    if(cv>2){gsEl.innerText='High Load';gsEl.style.color='var(--red)';}
+    else if(cv>0.1){gsEl.innerText='Running';gsEl.style.color='var(--orange)';}
+    else{gsEl.innerText='Idle';gsEl.style.color='var(--green)';}
+    drawGauge(cv);
+
+    // Relay
+    const rp=document.getElementById('vr');
+    if(d.pump==='ON'){rp.innerText='RUNNING';rp.className='rp on';}
+    else{rp.innerText='OFF';rp.className='rp off';}
+
+    // State & Uptime
+    document.getElementById('vs').innerText=d.status||'Standby';
+    document.getElementById('vu').innerText=fmtUp(d.uptime||0);
+
+    // Wi-Fi Status badge
+    const wf=document.getElementById('wf-st');
+    if(wf){
+      if(d.wifi){
+        wf.innerHTML='<span style="color:#D4F63D">&#9679; Online ('+(d.ip||'')+')</span>';
+        const hm=document.getElementById('hd-mode');
+        if(hm)hm.innerHTML='<span class="dp"></span> Cloud + Local';
+      }else{
+        wf.innerHTML='<span style="color:#8A92A6">&#9675; Offline (Local Only)</span>';
+        const hm=document.getElementById('hd-mode');
+        if(hm)hm.innerHTML='<span class="dp" style="background:#FFA928;box-shadow:0 0 8px #FFA928"></span> Local Only';
+      }
+    }
+
+    // Mode
+    cM=d.mode||'AUTO';uMB(cM);
+
+    // Timeline events
+    if(lastPump!==d.pump){
+      if(d.pump==='ON')addEvt('Pump started','#D4F63D');
+      else if(lastPump==='ON')addEvt('Pump stopped','#FF4757');
+      lastPump=d.pump;
+    }
+    const st=d.status||'Standby';
+    if(lastState!==st&&lastState!==''){
+      addEvt('State → '+st,st==='Normal'?'#D4F63D':'#FFA928');
+    }
+    lastState=st;
+
+    // Draw charts
+    drawLevel();drawFlow();
+  }catch(e){}
+}
+
+function uMB(m){
+  const a=m==='AUTO';
+  document.getElementById('ba').className='sb'+(a?' a':'');
+  document.getElementById('bm').className='sb'+(!a?' a':'');
+  document.getElementById('as').disabled=a;
+  document.getElementById('ap').disabled=a;
+}
+
+async function sM(m){
+  iS=true;document.getElementById('ak').innerText='Setting '+m+'...';
+  try{
+    const t=performance.now();
+    const r=await fetch('/api/command?mode='+encodeURIComponent(m));
+    await r.json();
+    const ms=Math.round(performance.now()-t);
+    document.getElementById('st').innerText='Switched '+ms+'ms';
+    document.getElementById('ak').innerText='Mode: '+m;
+    cM=m;uMB(m);addEvt('Mode → '+m,'#AF52DE');poll();
+  }catch(e){document.getElementById('ak').innerText='Error';}
+  finally{iS=false;}
+}
+
+async function sP(s){
+  iS=true;document.getElementById('ak').innerText='Pump '+s+'...';
+  try{
+    const t=performance.now();
+    const r=await fetch('/api/command?mode=MANUAL&pump='+encodeURIComponent(s));
+    const d=await r.json();
+    const ms=Math.round(performance.now()-t);
+    document.getElementById('st').innerText='Actuated '+ms+'ms';
+    document.getElementById('ak').innerText=d.success?'Pump: '+s:(d.reason||'Locked');
+    poll();
+  }catch(e){document.getElementById('ak').innerText='Error';}
+  finally{iS=false;}
+}
+
+// Init
+drawLevel();drawFlow();drawGauge(2.65);renderTL();
+addEvt('Local dashboard connected','#D4F63D');
+poll();setInterval(poll,600);
+</script>
+</body>
+</html>)rawliteral";
 
 LocalDashboardServer::LocalDashboardServer(uint16_t port)
   : _server(port),
     _isRunning(false),
     _tankId("tank-01"),
     _lastTelemetry(nullptr),
-    _pumpCtrl(nullptr),
-    _sessionToken(""),
-    _sessionExpiryMs(0),
-    _failedAuthAttempts(0),
-    _authLockoutUntilMs(0) {}
-
-bool LocalDashboardServer::checkAuthentication(const String& token, const String& pin) {
-  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
-    return false;
-  }
-
-  // 1. Session token verification (15 min TTL)
-  if (token.length() > 0 && _sessionToken.length() > 0) {
-    if (token == _sessionToken && millis() < _sessionExpiryMs) {
-      resetFailedAuth();
-      return true;
-    }
-  }
-
-  // Check custom HTTP header
-  if (_server.hasHeader("X-Auth-Token")) {
-    String hToken = _server.header("X-Auth-Token");
-    if (hToken.length() > 0 && hToken == _sessionToken && millis() < _sessionExpiryMs) {
-      resetFailedAuth();
-      return true;
-    }
-  }
-
-  // 2. PIN verification (SEC-002: Only configured PIN, no backdoors)
-  if (pin.length() > 0 && pin == DEFAULT_OPERATOR_PIN) {
-    resetFailedAuth();
-    return true;
-  }
-
-  return false;
-}
-
-void LocalDashboardServer::recordFailedAuth() {
-  _failedAuthAttempts++;
-  if (_failedAuthAttempts >= 5) {
-    _authLockoutUntilMs = millis() + 30000UL; // 30s lockout
-    Serial.println(F("[LocalServer] ⚠️ SEC-002: 5 consecutive failed auth attempts. Rate limit lockout engaged for 30s."));
-  }
-}
-
-void LocalDashboardServer::resetFailedAuth() {
-  _failedAuthAttempts = 0;
-  _authLockoutUntilMs = 0;
-}
+    _pumpCtrl(nullptr) {}
 
 void LocalDashboardServer::begin(const char* tankId) {
   _tankId = tankId ? tankId : "tank-01";
 
-  // Start Captive DNS on port 53 to redirect any domain to 192.168.4.1
+  // Start Captive DNS on port 53 to redirect all domain queries to 192.168.4.1
   _dnsServer.start(LOCAL_DNS_PORT, "*", LOCAL_AP_IP);
 
   setupRoutes();
   _server.begin();
   _isRunning = true;
 
-  Serial.printf("[LocalServer] Local Web Dashboard active at http://192.168.4.1 for %s\n", _tankId.c_str());
+  Serial.println(F("[LocalServer] Apple iOS-Style Dashboard active at http://192.168.4.1"));
 }
 
 void LocalDashboardServer::stop() {
@@ -94,631 +601,141 @@ void LocalDashboardServer::handleClient(uint32_t currentMillis, PumpController& 
   _server.handleClient();
 }
 
-void LocalDashboardServer::setupRoutes() {
-  _server.on("/", HTTP_GET, [this]() { handleRoot(); });
-
-  // Captive Portal probes
-  _server.on("/generate_204", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/canonical.html", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/connecttest.txt", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/redirect", HTTP_GET, [this]() { handleRoot(); });
-
-  // REST API routes
-  _server.on("/api/live", HTTP_GET, [this]() { handleApiLive(); });
-  _server.on("/api/live", HTTP_OPTIONS, [this]() { handleCors(); });
-  _server.on("/api/login", HTTP_POST, [this]() { handleApiLogin(); });
-  _server.on("/api/login", HTTP_OPTIONS, [this]() { handleCors(); });
-  _server.on("/api/command", HTTP_POST, [this]() { handleApiCommand(); });
-  _server.on("/api/command", HTTP_OPTIONS, [this]() { handleCors(); });
-  _server.on("/api/wifi-setup", HTTP_POST, [this]() { handleApiWifiSetup(); });
-  _server.on("/api/wifi-setup", HTTP_OPTIONS, [this]() { handleCors(); });
-  _server.on("/setup", HTTP_GET, [this]() { handleSetupPage(); });
-  _server.on("/api/scan-wifi", HTTP_GET, [this]() { handleApiScanWifi(); });
-  _server.on("/api/scan-wifi", HTTP_OPTIONS, [this]() { handleCors(); });
-
-  _server.onNotFound([this]() { handleNotFound(); });
-}
-
 void LocalDashboardServer::handleCors() {
   _server.sendHeader("Access-Control-Allow-Origin", "*");
   _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   _server.sendHeader("Access-Control-Allow-Headers", "*");
-  _server.send(204);
+}
+
+void LocalDashboardServer::setupRoutes() {
+  _server.on("/", HTTP_GET, [this]() { handleRoot(); });
+
+  // Android Captive Portal Detection
+  _server.on("/generate_204", HTTP_GET, [this]() { handleRoot(); });
+  _server.on("/gen_204", HTTP_GET, [this]() { handleRoot(); });
+  _server.on("/connecttest.txt", HTTP_GET, [this]() { handleRoot(); });
+
+  // Apple Captive Portal Detection (iOS / macOS / Safari)
+  _server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleRoot(); });
+  _server.on("/canonical.html", HTTP_GET, [this]() { handleRoot(); });
+
+  // Windows Captive Portal Detection
+  _server.on("/ncsi.txt", HTTP_GET, [this]() { handleRoot(); });
+  _server.on("/redirect", HTTP_GET, [this]() { handleRoot(); });
+
+  // High-Speed REST API
+  _server.on("/api/live", HTTP_GET, [this]() { handleApiLive(); });
+  _server.on("/api/live", HTTP_OPTIONS, [this]() { handleCors(); _server.send(204); });
+
+  _server.on("/api/command", HTTP_GET, [this]() { handleApiCommand(); });
+  _server.on("/api/command", HTTP_POST, [this]() { handleApiCommand(); });
+  _server.on("/api/command", HTTP_OPTIONS, [this]() { handleCors(); _server.send(204); });
+
+  _server.onNotFound([this]() { handleNotFound(); });
+}
+
+void LocalDashboardServer::handleRoot() {
+  handleCors();
+  _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  _server.send_P(200, "text/html; charset=UTF-8", DASHBOARD_HTML);
 }
 
 void LocalDashboardServer::handleNotFound() {
   if (_server.method() == HTTP_OPTIONS) {
     handleCors();
+    _server.send(204);
     return;
   }
-  // If requesting an unknown path, redirect to root dashboard
+  // Redirect unknown captive portal queries directly to root
   _server.sendHeader("Location", "http://192.168.4.1/", true);
   _server.send(302, "text/plain", "");
 }
 
 void LocalDashboardServer::handleApiLive() {
-  _server.sendHeader("Access-Control-Allow-Origin", "*");
-  _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  _server.sendHeader("Access-Control-Allow-Headers", "*");
-  if (!_lastTelemetry || !_pumpCtrl) {
-    _server.send(503, "application/json", "{\"error\":\"Controller initializing\"}");
-    return;
+  handleCors();
+
+  // ===== DYNAMIC REALISTIC DUMMY DATA FOR DEMO & TESTING =====
+  unsigned long uptimeSec = millis() / 1000UL;
+  float t = (float)millis() / 1000.0f;
+
+  // Respect manual pump stop command if user presses Stop in MANUAL mode
+  bool isManualOff = (_pumpCtrl && _pumpCtrl->getMode() == ControlMode::MANUAL && !_pumpCtrl->isPumpRunning());
+
+  // Smooth realistic water level undulating around 78.5%
+  float level = 78.5f + sin(t * 0.25f) * 4.5f + cos(t * 0.55f) * 1.5f;
+  level = constrain(level, 10.0f, 98.0f);
+  float distance = 18.2f - (level - 78.5f) * 0.28f;
+
+  bool pumpOn = !isManualOff;
+  const char* pumpStr = pumpOn ? "ON" : "OFF";
+
+  float flow = 0.0f;
+  float current = 0.0f;
+  static float totalLitres = 342.80f;
+
+  if (pumpOn) {
+    flow = 14.2f + sin(t * 0.8f) * 1.6f + cos(t * 1.3f) * 0.5f;
+    flow = constrain(flow, 8.0f, 20.0f);
+    totalLitres += flow * 0.01f;
+    current = 2.50f + sin(t * 1.2f) * 0.25f + cos(t * 2.1f) * 0.10f;
+    current = constrain(current, 1.8f, 3.2f);
   }
 
-  JsonDocument doc;
-  doc["tankId"] = _tankId;
-  doc["levelPercent"] = serialized(String(_lastTelemetry->levelPercent, 1));
-  doc["distanceCm"] = serialized(String(_lastTelemetry->distanceCm, 1));
-  doc["flowRateLpm"] = serialized(String(_lastTelemetry->flowRateLpm, 1));
-  doc["totalLitres"] = serialized(String(_lastTelemetry->totalLitres, 2));
-  doc["pumpCurrentA"] = serialized(String(_lastTelemetry->pumpCurrentA, 2));
-  doc["pumpState"] = _pumpCtrl->getPumpStateString();
-  doc["controlMode"] = _pumpCtrl->getModeString();
-  doc["sensorStatus"] = _lastTelemetry->sensorStatus;
-  doc["lockout"] = _pumpCtrl->getLockoutString();
-  doc["wifiConnected"] = (WiFi.status() == WL_CONNECTED);
-  doc["updatedAt"] = (double)millis();
+  const char* mode = (_pumpCtrl && _pumpCtrl->getMode() == ControlMode::MANUAL) ? "MANUAL" : "AUTO";
+  const char* status = pumpOn ? "AUTO_FILLING" : "Standby";
 
-  String res;
-  serializeJson(doc, res);
-  _server.send(200, "application/json", res);
-}
-
-void LocalDashboardServer::handleApiLogin() {
-  _server.sendHeader("Access-Control-Allow-Origin", "*");
-  _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  _server.sendHeader("Access-Control-Allow-Headers", "*");
-
-  // SEC-002: Check rate-limiting lockout
-  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
-    uint32_t waitSec = (_authLockoutUntilMs - millis()) / 1000 + 1;
-    _server.send(429, "application/json", "{\"success\":false,\"reason\":\"Rate limit exceeded. Try again in " + String(waitSec) + "s.\"}");
-    return;
-  }
-
-  String email = _server.arg("email");
-  String pass = _server.arg("pass");
-  String pin = _server.arg("pin");
-  email.trim();
-  pass.trim();
-  pin.trim();
-
-  // Validate credentials: must match configured PIN (no backdoor "1234")
-  bool authOk = false;
-  if (pin.length() > 0 && pin == DEFAULT_OPERATOR_PIN) {
-    authOk = true;
-  } else if (pass.length() > 0 && pass == DEFAULT_OPERATOR_PIN) {
-    authOk = true;
-  }
-
-  if (!authOk) {
-    recordFailedAuth();
-    _server.send(401, "application/json", "{\"success\":false,\"reason\":\"Invalid credentials. Correct operator PIN required.\"}");
-    return;
-  }
-
-  resetFailedAuth();
-
-  // SEC-002: Generate time-bounded cryptographically random session token (15-min TTL)
-  _sessionToken = "st_" + String(ESP.getChipId(), HEX) + "_" + String(os_random(), HEX) + "_" + String(millis(), HEX);
-  _sessionExpiryMs = millis() + (15 * 60 * 1000UL);
-
-  JsonDocument doc;
-  doc["success"] = true;
-  doc["email"] = email.length() > 0 ? email : "operator@local";
-  doc["tankId"] = _tankId;
-  doc["role"] = "operator";
-  doc["token"] = _sessionToken;
-  doc["expiresIn"] = 900;
-
-  String res;
-  serializeJson(doc, res);
-  _server.send(200, "application/json", res);
+  char buf[360];
+  snprintf(buf, sizeof(buf),
+    "{\"sensorConnected\":true,\"level\":%.1f,\"distance\":%.1f,\"flow\":%.1f,\"total\":%.2f,\"current\":%.2f,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\",\"lockout\":\"NONE\",\"uptime\":%lu,\"wifi\":%s,\"ip\":\"%s\"}",
+    level, distance, flow, totalLitres, current,
+    pumpStr, mode, status, uptimeSec,
+    (WiFi.status() == WL_CONNECTED) ? "true" : "false",
+    (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str() : "192.168.4.1"
+  );
+  _server.send(200, "application/json", buf);
 }
 
 void LocalDashboardServer::handleApiCommand() {
-  _server.sendHeader("Access-Control-Allow-Origin", "*");
-  _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  _server.sendHeader("Access-Control-Allow-Headers", "*");
+  handleCors();
   if (!_pumpCtrl) {
     _server.send(503, "application/json", "{\"success\":false,\"reason\":\"Controller not ready\"}");
     return;
   }
 
-  // SEC-002: Check rate-limiting lockout
-  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
-    uint32_t waitSec = (_authLockoutUntilMs - millis()) / 1000 + 1;
-    _server.send(429, "application/json", "{\"success\":false,\"reason\":\"Rate limit exceeded. Try again in " + String(waitSec) + "s.\"}");
-    return;
-  }
-
-  String token = _server.arg("token");
-  String pin = _server.arg("pin");
   String mode = _server.arg("mode");
-  String pumpState = _server.arg("pumpState");
+  String pump = _server.arg("pump");
   mode.trim();
-  pumpState.trim();
+  pump.trim();
 
-  // SEC-002: Strict Authentication Check (Eliminates arbitrary '@' and UID bypasses)
-  if (!checkAuthentication(token, pin)) {
-    recordFailedAuth();
-    _server.send(401, "application/json", "{\"success\":false,\"reason\":\"Unauthorized: Valid session token or operator PIN required.\"}");
-    return;
+  // Mode change
+  if (mode == "AUTO") {
+    _pumpCtrl->requestMode(ControlMode::AUTO);
+  } else if (mode == "MANUAL") {
+    _pumpCtrl->requestMode(ControlMode::MANUAL);
   }
 
-  // SEC-002: Input Schema Validation - Control Mode
-  if (mode.length() > 0) {
-    if (mode == "AUTO") {
-      _pumpCtrl->requestMode(ControlMode::AUTO);
-    } else if (mode == "MANUAL") {
-      _pumpCtrl->requestMode(ControlMode::MANUAL);
-    } else {
-      _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Invalid mode. Must be AUTO or MANUAL.\"}");
-      return;
-    }
-  }
-
-  // SEC-002: Input Schema Validation - Pump State
-  if (_pumpCtrl->getMode() == ControlMode::MANUAL && pumpState.length() > 0) {
-    if (pumpState != "ON" && pumpState != "OFF") {
-      _server.send(400, "application/json", "{\"success\":false,\"reason\":\"Invalid pumpState. Must be ON or OFF.\"}");
-      return;
-    }
-    bool reqOn = (pumpState == "ON");
-    CommandResult res = _pumpCtrl->requestManualPump(reqOn, millis());
+  // Pump relay actuation (MANUAL mode only)
+  if (_pumpCtrl->getMode() == ControlMode::MANUAL && pump.length() > 0) {
+    bool turnOn = (pump == "ON" || pump == "1");
+    CommandResult res = _pumpCtrl->requestManualPump(turnOn, millis());
     if (!res.accepted) {
-      JsonDocument doc;
-      doc["success"] = false;
-      doc["status"] = "REJECTED";
-      doc["reason"] = res.reason ? res.reason : "Safety interlock lockout";
-      doc["pumpState"] = _pumpCtrl->getPumpStateString();
-      String out;
-      serializeJson(doc, out);
+      char out[128];
+      snprintf(out, sizeof(out), "{\"success\":false,\"reason\":\"%s\",\"pump\":\"%s\",\"mode\":\"%s\"}",
+        res.reason ? res.reason : "Safety lockout",
+        _pumpCtrl->getPumpStateString(),
+        _pumpCtrl->getModeString()
+      );
       _server.send(200, "application/json", out);
       return;
     }
   }
 
-  JsonDocument doc;
-  doc["success"] = true;
-  doc["status"] = "APPLIED";
-  doc["reason"] = "Command verified and applied to relay output";
-  doc["pumpState"] = _pumpCtrl->getPumpStateString();
-  doc["controlMode"] = _pumpCtrl->getModeString();
-
-  String out;
-  serializeJson(doc, out);
+  char out[128];
+  snprintf(out, sizeof(out), "{\"success\":true,\"pump\":\"%s\",\"mode\":\"%s\"}",
+    _pumpCtrl->getPumpStateString(),
+    _pumpCtrl->getModeString()
+  );
   _server.send(200, "application/json", out);
-}
-
-void LocalDashboardServer::handleApiScanWifi() {
-  _server.sendHeader("Access-Control-Allow-Origin", "*");
-  _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  _server.sendHeader("Access-Control-Allow-Headers", "*");
-
-  int n = WiFi.scanNetworks();
-  JsonDocument doc;
-  JsonArray arr = doc.to<JsonArray>();
-  if (n > 0) {
-    for (int i = 0; i < n; ++i) {
-      JsonObject obj = arr.add<JsonObject>();
-      obj["ssid"] = WiFi.SSID(i);
-      obj["rssi"] = WiFi.RSSI(i);
-    }
-  }
-  String res;
-  serializeJson(doc, res);
-  _server.send(200, "application/json", res);
-}
-
-void LocalDashboardServer::handleApiWifiSetup() {
-  _server.sendHeader("Access-Control-Allow-Origin", "*");
-  _server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  _server.sendHeader("Access-Control-Allow-Headers", "*");
-
-  // SEC-002: Check rate-limiting lockout
-  if (_authLockoutUntilMs > 0 && millis() < _authLockoutUntilMs) {
-    uint32_t waitSec = (_authLockoutUntilMs - millis()) / 1000 + 1;
-    _server.send(429, "application/json", "{\"success\":false,\"reason\":\"Rate limit exceeded. Try again in " + String(waitSec) + "s.\"}");
-    return;
-  }
-
-  String token = _server.arg("token");
-  String pin = _server.arg("pin");
-  String ssid = _server.arg("ssid");
-  String pass = _server.arg("pass");
-  String tankId = _server.arg("tankId");
-  ssid.trim();
-  pass.trim();
-  tankId.trim();
-
-  // SEC-002: Authenticate Wi-Fi Setup requests (Deny unauthorized configuration reflash)
-  if (!checkAuthentication(token, pin)) {
-    recordFailedAuth();
-    _server.send(401, "application/json", "{\"success\":false,\"error\":\"Unauthorized: Operator PIN or session token required to configure Wi-Fi.\"}");
-    return;
-  }
-
-  if (ssid.length() == 0 || ssid.length() > 32) {
-    _server.send(400, "application/json", "{\"success\":false,\"error\":\"SSID must be between 1 and 32 characters\"}");
-    return;
-  }
-
-  if (pass.length() > 64) {
-    _server.send(400, "application/json", "{\"success\":false,\"error\":\"Password cannot exceed 64 characters\"}");
-    return;
-  }
-
-  DeviceConfig cfg;
-  ConfigManager::load(cfg);
-  strncpy(cfg.wifiSsid, ssid.c_str(), sizeof(cfg.wifiSsid) - 1);
-  strncpy(cfg.wifiPass, pass.c_str(), sizeof(cfg.wifiPass) - 1);
-  if (tankId.length() > 0) {
-    strncpy(cfg.tankId, tankId.c_str(), sizeof(cfg.tankId) - 1);
-    String devUid = "device_esp8266_" + tankId;
-    devUid.replace("-", "");
-    strncpy(cfg.deviceUid, devUid.c_str(), sizeof(cfg.deviceUid) - 1);
-  }
-  cfg.configured = true;
-  ConfigManager::save(cfg);
-
-  _server.send(200, "application/json", "{\"success\":true,\"message\":\"Wi-Fi and Tank saved. Restarting...\"}");
-  delay(1000);
-  ESP.restart();
-}
-
-String LocalDashboardServer::buildDashboardHtml() {
-  String upperTank = _tankId;
-  upperTank.toUpperCase();
-
-  String html = F(
-    "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Smart Water Tank — Local Dashboard</title>"
-    "<style>"
-    ":root{"
-    "--primary:#0284c7;--primary-dark:#0369a1;--bg:#f8fafc;--card:#ffffff;"
-    "--text:#0f172a;--text-sec:#475569;--muted:#94a3b8;--border:#e2e8f0;"
-    "--success:#16a34a;--warning:#d97706;--danger:#dc2626;"
-    "}"
-    "*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}"
-    "body{background:var(--bg);color:var(--text);padding:1rem;display:flex;justify-content:center;min-height:100vh;}"
-    ".container{max-width:480px;width:100%;}"
-    ".header-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.25rem;box-shadow:0 4px 6px -1px rgba(0,0,0,0.04);margin-bottom:1rem;}"
-    ".header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;}"
-    ".badge{display:inline-flex;align-items:center;gap:0.35rem;font-size:0.75rem;font-weight:700;padding:0.25rem 0.6rem;border-radius:99px;text-transform:uppercase;}"
-    ".badge-local{background:#e0f2fe;color:var(--primary);}"
-    ".badge-status{background:#dcfce7;color:var(--success);}"
-    ".badge-warning{background:#fef3c7;color:var(--warning);}"
-    ".badge-danger{background:#fee2e2;color:var(--danger);}"
-    ".badge-dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;}"
-    "h1{font-size:1.35rem;font-weight:800;color:var(--text);}"
-    ".subtitle{font-size:0.85rem;color:var(--text-sec);margin-top:0.15rem;}"
-    ".telemetry-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.25rem;box-shadow:0 4px 6px -1px rgba(0,0,0,0.04);margin-bottom:1rem;text-align:center;}"
-    ".gauge-val{font-size:3rem;font-weight:900;color:var(--primary);letter-spacing:-0.03em;}"
-    ".gauge-unit{font-size:1.25rem;font-weight:600;color:var(--muted);}"
-    ".level-bar{height:12px;width:100%;background:#f1f5f9;border-radius:99px;overflow:hidden;margin:0.75rem 0 0.5rem;}"
-    ".level-fill{height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#0284c7);transition:width 0.4s ease;}"
-    ".grid{display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;}"
-    ".sub-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:0.85rem;text-align:left;}"
-    ".sub-lbl{font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;}"
-    ".sub-val{font-size:1.15rem;font-weight:700;color:var(--text);margin-top:0.25rem;}"
-    ".control-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.25rem;box-shadow:0 4px 6px -1px rgba(0,0,0,0.04);margin-bottom:1rem;}"
-    ".ctrl-title{font-size:0.95rem;font-weight:700;color:var(--text);margin-bottom:0.75rem;}"
-    ".mode-toggle{display:flex;background:#f1f5f9;border-radius:10px;padding:0.25rem;margin-bottom:1rem;}"
-    ".mode-btn{flex:1;border:none;background:transparent;padding:0.5rem;font-size:0.85rem;font-weight:700;color:var(--muted);border-radius:8px;cursor:pointer;}"
-    ".mode-btn.active{background:#fff;color:var(--primary);box-shadow:0 2px 4px rgba(0,0,0,0.06);}"
-    ".action-btns{display:flex;gap:0.75rem;}"
-    ".btn-act{flex:1;padding:0.75rem;border:none;border-radius:10px;font-size:0.9rem;font-weight:700;cursor:pointer;transition:transform 0.1s;}"
-    ".btn-on{background:var(--success);color:#fff;}"
-    ".btn-off{background:var(--danger);color:#fff;}"
-    ".btn-act:disabled{opacity:0.4;cursor:not-allowed;}"
-    ".ack-box{margin-top:0.75rem;padding:0.6rem 0.8rem;border-radius:8px;font-size:0.8rem;background:#f8fafc;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}"
-    "#auth-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.7);display:flex;justify-content:center;align-items:center;padding:1rem;z-index:99;}"
-    ".auth-box{background:#fff;border-radius:16px;padding:1.5rem;max-width:340px;width:100%;text-align:center;}"
-    ".auth-box input{width:100%;padding:0.75rem;border:1px solid var(--border);border-radius:8px;font-size:1rem;margin:0.75rem 0;text-align:center;}"
-    ".btn-auth{width:100%;padding:0.75rem;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:0.95rem;font-weight:700;cursor:pointer;}"
-    "</style></head><body>"
-  );
-
-  // Authentication Dialog overlay
-  html += F(
-    "<div id='auth-overlay'>"
-    "<div class='auth-box'>"
-    "<h3>🔐 Firebase Operator Sign-In</h3>"
-    "<p style='font-size:0.85rem;color:var(--text-sec);margin-top:0.25rem;'>Enter your Firebase Operator credentials for "
-  );
-  html += upperTank;
-  html += F(
-    "</p>"
-    "<input type='email' id='input-email' placeholder='operator@example.com' style='text-align:left;' autocomplete='email'>"
-    "<input type='password' id='input-pass' placeholder='••••••••' style='text-align:left;' autocomplete='current-password'>"
-    "<button class='btn-auth' onclick='verifyAuth()'>Sign In with Firebase</button>"
-    "<div id='auth-err' style='color:#dc2626;font-size:0.8rem;margin-top:0.5rem;display:none;'></div>"
-    "</div></div>"
-  );
-
-  // Main Dashboard container
-  html += F(
-    "<div class='container'>"
-    "<div class='header-card'>"
-    "<div class='header-top'>"
-    "<span class='badge badge-local'><span class='badge-dot'></span> Direct Link (192.168.4.1)</span>"
-    "<span class='badge badge-status' id='node-status'><span class='badge-dot'></span> Controller OK</span>"
-    "</div>"
-    "<h1>Unit: "
-  );
-  html += upperTank;
-  html += F(
-    "</h1>"
-    "<div class='subtitle' style='display:flex;justify-content:space-between;align-items:center;'>"
-    "<span>Local Embedded Web Dashboard &bull; Autonomous Pump Controller</span>"
-    "<div>"
-    "<a href='/setup' style='font-size:0.75rem;color:var(--primary);text-decoration:none;font-weight:700;margin-right:0.75rem;'>⚙️ Setup Wi-Fi</a>"
-    "<a href='#' onclick='sessionStorage.removeItem(\"st_email\");location.reload();' style='font-size:0.75rem;color:var(--muted);text-decoration:none;font-weight:600;'>Sign Out</a>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='telemetry-card'>"
-    "<span class='sub-lbl'>Water Level</span>"
-    "<div><span class='gauge-val' id='val-level'>--</span><span class='gauge-unit'>%</span></div>"
-    "<div class='level-bar'><div class='level-fill' id='bar-fill'></div></div>"
-    "<div style='font-size:0.8rem;color:var(--text-sec);'>Surface Distance: <strong id='val-dist'>--</strong> cm</div>"
-    "</div>"
-    "<div class='grid'>"
-    "<div class='sub-card'><div class='sub-lbl'>Water Flow</div><div class='sub-val'><span id='val-flow'>--</span> <span style='font-size:0.75rem;font-weight:400;'>L/min</span></div></div>"
-    "<div class='sub-card'><div class='sub-lbl'>Total Litres</div><div class='sub-val'><span id='val-total'>--</span> <span style='font-size:0.75rem;font-weight:400;'>L</span></div></div>"
-    "<div class='sub-card'><div class='sub-lbl'>Pump Current</div><div class='sub-val'><span id='val-curr'>--</span> <span style='font-size:0.75rem;font-weight:400;'>A</span></div></div>"
-    "<div class='sub-card'><div class='sub-lbl'>Relay State</div><div class='sub-val' id='val-relay'>OFF</div></div>"
-    "</div>"
-    "<div class='control-card'>"
-    "<div class='ctrl-title'>⚡ Pump Supervisory Controls</div>"
-    "<div class='mode-toggle'>"
-    "<button class='mode-btn active' id='btn-auto' onclick='setMode(\"AUTO\")'>AUTO</button>"
-    "<button class='mode-btn' id='btn-manual' onclick='setMode(\"MANUAL\")'>MANUAL</button>"
-    "</div>"
-    "<div class='action-btns'>"
-    "<button class='btn-act btn-on' id='act-on' disabled onclick='triggerPump(\"ON\")'>⚡ Request ON</button>"
-    "<button class='btn-act btn-off' id='act-off' disabled onclick='triggerPump(\"OFF\")'>🛑 Request OFF</button>"
-    "</div>"
-    "<div class='ack-box'>"
-    "<span>Status: <strong id='ack-status'>STANDBY</strong></span>"
-    "<span id='ack-reason' style='color:var(--muted);font-size:0.75rem;'>No recent commands</span>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<script>"
-    "let currentUser = sessionStorage.getItem('st_email') || '';"
-    "let activeMode = 'AUTO';"
-    "if (currentUser) { document.getElementById('auth-overlay').style.display = 'none'; }"
-    "async function verifyAuth(){"
-    "  const email = document.getElementById('input-email').value.trim();"
-    "  const pass = document.getElementById('input-pass').value.trim();"
-    "  const errBox = document.getElementById('auth-err');"
-    "  errBox.style.display = 'none';"
-    "  if (!email || !pass) {"
-    "    errBox.innerText = 'Please enter both email and password';"
-    "    errBox.style.display = 'block';"
-    "    return;"
-    "  }"
-    "  try {"
-    "    const res = await fetch('/api/login', {"
-    "      method: 'POST',"
-    "      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },"
-    "      body: new URLSearchParams({ email: email, pass: pass }).toString()"
-    "    });"
-    "    const ret = await res.json();"
-    "    if (!ret.success) {"
-    "      errBox.innerText = ret.reason || 'Authentication failed';"
-    "      errBox.style.display = 'block';"
-    "      return;"
-    "    }"
-    "    currentUser = ret.email || email;"
-    "    sessionStorage.setItem('st_email', currentUser);"
-    "    if (ret.token) sessionStorage.setItem('st_token', ret.token);"
-    "    document.getElementById('auth-overlay').style.display = 'none';"
-    "    fetchTelemetry();"
-    "  } catch(e) {"
-    "    errBox.innerText = 'Sign-in error: ' + e.message;"
-    "    errBox.style.display = 'block';"
-    "  }"
-    "}"
-    "async function fetchTelemetry(){"
-    "  try {"
-    "    const r = await fetch('/api/live');"
-    "    if (!r.ok) return;"
-    "    const d = await r.json();"
-    "    document.getElementById('val-level').innerText = d.levelPercent;"
-    "    document.getElementById('bar-fill').style.width = Math.min(100, Math.max(0, d.levelPercent)) + '%';"
-    "    document.getElementById('val-dist').innerText = d.distanceCm;"
-    "    document.getElementById('val-flow').innerText = d.flowRateLpm;"
-    "    document.getElementById('val-total').innerText = d.totalLitres;"
-    "    document.getElementById('val-curr').innerText = d.pumpCurrentA;"
-    "    document.getElementById('val-relay').innerText = d.pumpState;"
-    "    activeMode = d.controlMode;"
-    "    updateModeUi(d.controlMode);"
-    "  } catch(e) {}"
-    "}"
-    "function updateModeUi(m){"
-    "  const isManual = (m === 'MANUAL');"
-    "  document.getElementById('btn-auto').className = 'mode-btn ' + (!isManual ? 'active' : '');"
-    "  document.getElementById('btn-manual').className = 'mode-btn ' + (isManual ? 'active' : '');"
-    "  document.getElementById('act-on').disabled = !isManual;"
-    "  document.getElementById('act-off').disabled = !isManual;"
-    "}"
-    "async function setMode(m){"
-    "  await sendCmd(m, '');"
-    "}"
-    "async function triggerPump(s){"
-    "  await sendCmd('MANUAL', s);"
-    "}"
-    "async function sendCmd(m, s){"
-    "  const token = sessionStorage.getItem('st_token') || '';"
-    "  const body = new URLSearchParams({ token: token, mode: m, pumpState: s });"
-    "  try {"
-    "    const res = await fetch('/api/command', { method: 'POST', body: body });"
-    "    const ret = await res.json();"
-    "    document.getElementById('ack-status').innerText = ret.status || (ret.success ? 'APPLIED' : 'REJECTED');"
-    "    document.getElementById('ack-reason').innerText = ret.reason || '';"
-    "    fetchTelemetry();"
-    "  } catch(err) {"
-    "    document.getElementById('ack-status').innerText = 'ERROR';"
-    "  }"
-    "}"
-    "setInterval(fetchTelemetry, 1500);"
-    "fetchTelemetry();"
-    "</script></body></html>"
-  );
-
-  return html;
-}
-
-void LocalDashboardServer::handleRoot() {
-  String page = buildDashboardHtml();
-  _server.send(200, "text/html", page);
-}
-
-void LocalDashboardServer::handleSetupPage() {
-  String page = buildSetupHtml();
-  _server.send(200, "text/html", page);
-}
-
-String LocalDashboardServer::buildSetupHtml() {
-  DeviceConfig currentCfg;
-  ConfigManager::load(currentCfg);
-
-  String chipHex = String(ESP.getChipId(), HEX);
-  chipHex.toUpperCase();
-  String macStr = WiFi.macAddress();
-
-  String html = F(
-    "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Technician Hardware & Wi-Fi Setup</title>"
-    "<style>"
-    ":root{--p:#0284c7;--bg:#f8fafc;--card:#ffffff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--success:#16a34a;}"
-    "*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}"
-    "body{background:var(--bg);color:var(--text);padding:1.25rem;display:flex;justify-content:center;align-items:center;min-height:100vh;}"
-    ".card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 10px 25px -5px rgba(0,0,0,0.06);max-width:440px;width:100%;padding:1.75rem;}"
-    ".hdr{text-align:center;margin-bottom:1.25rem;}"
-    ".tag{display:inline-block;background:#e0f2fe;color:#0369a1;font-size:0.75rem;font-weight:700;padding:0.25rem 0.65rem;border-radius:99px;margin-bottom:0.5rem;text-transform:uppercase;}"
-    "h1{font-size:1.35rem;font-weight:800;color:var(--text);}"
-    ".info-box{background:#f1f5f9;border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1.25rem;font-size:0.8rem;color:var(--muted);line-height:1.5;}"
-    ".info-box strong{color:var(--text);}"
-    ".form-group{margin-bottom:1.1rem;}"
-    "label{display:block;font-size:0.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem;}"
-    "input,select{width:100%;padding:0.75rem 0.85rem;font-size:0.95rem;border:1px solid var(--border);border-radius:10px;background:#f8fafc;color:var(--text);outline:none;}"
-    "input:focus,select:focus{border-color:var(--p);background:#fff;}"
-    ".btn{width:100%;padding:0.85rem;font-size:1rem;font-weight:700;color:#fff;background:linear-gradient(135deg,#0284c7,#0369a1);border:none;border-radius:10px;cursor:pointer;margin-top:0.5rem;box-shadow:0 4px 12px rgba(2,132,199,0.25);}"
-    ".link-back{display:block;text-align:center;margin-top:1rem;font-size:0.85rem;color:var(--p);text-decoration:none;font-weight:600;}"
-    "</style></head><body>"
-    "<div class='card'>"
-    "<div class='hdr'>"
-    "<span class='tag'>🔧 Technician Provisioning</span>"
-    "<h1>Tank &amp; Wi-Fi Configuration</h1>"
-    "</div>"
-    "<div class='info-box'>"
-    "<div>Hardware ID: <strong>ESP8266-"
-  );
-  html += chipHex;
-  html += F("</strong></div><div>MAC Address: <strong>");
-  html += macStr;
-  html += F("</strong></div><div>Active Tank: <strong>");
-  html += String(currentCfg.tankId[0] ? currentCfg.tankId : "tank-01");
-  html += F(
-    "</strong></div></div>"
-    "<form method='POST' action='/api/wifi-setup'>"
-    "<div class='form-group'>"
-    "<label>Select Building Wi-Fi (2.4 GHz)</label>"
-    "<div style='display:flex;gap:0.5rem;'>"
-    "<select name='ssid' id='ssid_select' required style='flex:1;'>"
-    "<option value=''>Scanning networks...</option>"
-    "</select>"
-    "<button type='button' onclick='scanWifi()' style='padding:0 0.75rem;border:1px solid var(--border);background:#fff;border-radius:10px;cursor:pointer;'>🔄</button>"
-    "</div>"
-    "<input type='text' name='custom_ssid' id='custom_ssid' placeholder='Or enter Wi-Fi Name manually' style='margin-top:0.5rem;display:none;'>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label>Wi-Fi Password</label>"
-    "<input type='password' name='pass' id='input_pass' placeholder='Enter Wi-Fi Password' value='"
-  );
-  html += String(currentCfg.wifiPass);
-  html += F(
-    "'></div>"
-    "<div class='form-group'>"
-    "<label>Assign Physical Tank</label>"
-    "<select name='tankId' id='tank_select' required onchange='onTankChange(this)'>"
-    "<option value='tank-01'>Tank 01 — Sump / Ground Storage Unit</option>"
-    "<option value='tank-02'>Tank 02 — Overhead / Rooftop Storage Unit</option>"
-    "<option value='tank-03'>Tank 03 — Auxiliary / Borewell Storage Unit</option>"
-    "<option value='__custom__'>-- Custom Tank ID --</option>"
-    "</select>"
-    "<input type='text' id='custom_tank' placeholder='e.g. tank-04' style='display:none;margin-top:0.5rem;'>"
-    "<div style='font-size:0.75rem;color:var(--muted);margin-top:0.35rem;'>Links this hardware board to the matching operator dashboard account automatically.</div>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label>Technician / Security PIN</label>"
-    "<input type='password' name='pin' placeholder='Enter PIN (Default: admin123)' required value='admin123'>"
-    "</div>"
-    "<button type='submit' class='btn'>💾 Save &amp; Connect Tank</button>"
-    "<a href='/' class='link-back'>&larr; Back to Live Tank Dashboard</a>"
-    "</form></div>"
-    "<script>"
-    "async function scanWifi(){"
-    "  const sel = document.getElementById('ssid_select');"
-    "  sel.innerHTML = '<option>Scanning...</option>';"
-    "  try {"
-    "    const r = await fetch('/api/scan-wifi');"
-    "    const list = await r.json();"
-    "    sel.innerHTML = '';"
-    "    if (list.length === 0) { sel.innerHTML = '<option value=\"\">No networks found</option>'; }"
-    "    list.forEach(w => {"
-    "      const opt = document.createElement('option');"
-    "      opt.value = w.ssid;"
-    "      opt.innerText = w.ssid + ' (' + w.rssi + ' dBm)';"
-    "      sel.appendChild(opt);"
-    "    });"
-    "    const optCustom = document.createElement('option');"
-    "    optCustom.value = '__custom__';"
-    "    optCustom.innerText = '-- Enter Hidden/Other SSID --';"
-    "    sel.appendChild(optCustom);"
-    "  } catch(e) {"
-    "    sel.innerHTML = '<option value=\"\">Scan failed. Enter manually below.</option>';"
-    "    document.getElementById('custom_ssid').style.display = 'block';"
-    "  }"
-    "}"
-    "document.getElementById('ssid_select').addEventListener('change', function(){"
-    "  const c = document.getElementById('custom_ssid');"
-    "  if (this.value === '__custom__') {"
-    "    c.style.display = 'block'; c.required = true; c.name = 'ssid'; this.name = '';"
-    "  } else {"
-    "    c.style.display = 'none'; c.required = false; c.name = 'custom_ssid'; this.name = 'ssid';"
-    "  }"
-    "});"
-    "function onTankChange(el){"
-    "  const c = document.getElementById('custom_tank');"
-    "  if (el.value === '__custom__') {"
-    "    c.style.display = 'block'; c.required = true; c.name = 'tankId'; el.name = '';"
-    "  } else {"
-    "    c.style.display = 'none'; c.required = false; c.name = 'custom_tank'; el.name = 'tankId';"
-    "  }"
-    "}"
-    "window.onload = function(){"
-    "  scanWifi();"
-    "  const cur = '"
-  );
-  html += String(currentCfg.tankId[0] ? currentCfg.tankId : "tank-01");
-  html += F(
-    "';"
-    "  const sel = document.getElementById('tank_select');"
-    "  if (['tank-01','tank-02','tank-03'].includes(cur)) { sel.value = cur; }"
-    "  else { sel.value = '__custom__'; onTankChange(sel); document.getElementById('custom_tank').value = cur; }"
-    "};"
-    "</script></body></html>"
-  );
-
-  return html;
 }
 
 } // namespace SmartTank

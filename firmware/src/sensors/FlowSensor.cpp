@@ -4,9 +4,11 @@
 namespace SmartTank {
 
 volatile uint32_t FlowSensor::_interruptPulseCount = 0;
+volatile uint32_t FlowSensor::_lastInterruptTimeMs = 0;
 
 void IRAM_ATTR FlowSensor::onPulseInterrupt() {
   _interruptPulseCount++;
+  _lastInterruptTimeMs = millis();
 }
 
 FlowSensor::FlowSensor(uint8_t pin, float pulsesPerLitre)
@@ -14,6 +16,8 @@ FlowSensor::FlowSensor(uint8_t pin, float pulsesPerLitre)
       _pulsesPerLitre(pulsesPerLitre > 0.0f ? pulsesPerLitre : DEFAULT_PULSES_PER_LITRE),
       _flowRateLpm(0.0f),
       _totalLitres(0.0f),
+      _isPlausible(true),
+      _lastPulseTimeMs(0),
       _lastTotalPulseCount(0) {}
 
 void FlowSensor::begin() {
@@ -58,7 +62,16 @@ void FlowSensor::update(uint32_t deltaMs) {
   }
   _lastTotalPulseCount = currentTotal;
 
+  if (deltaPulses > 0) {
+    _lastPulseTimeMs = millis();
+  }
+
   _flowRateLpm = calculateFlowRateLpm(deltaPulses, deltaMs, _pulsesPerLitre);
+  if (_flowRateLpm > MAX_PLAUSIBLE_LPM) {
+    _isPlausible = false;
+  } else {
+    _isPlausible = true;
+  }
   _totalLitres = calculateVolumeLitres(currentTotal, _pulsesPerLitre);
 }
 

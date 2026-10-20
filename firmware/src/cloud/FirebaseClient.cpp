@@ -15,6 +15,8 @@ FirebaseClient::FirebaseClient(const String& host, const String& authKey, const 
     _lastCommandPollMs(0),
     _startupBaselineEstablished(false),
     _ntpConfigured(false),
+    _lastWifiConnected(false),
+    _lastReconnectAttemptMs(0),
     _lastReportedLockout(SafetyLockout::NONE) {
   _lastProcessedCommandId[0] = '\0';
 }
@@ -23,12 +25,15 @@ void FirebaseClient::begin(const String& wifiSsid, const String& wifiPassword) {
   _ssid = wifiSsid;
   _pass = wifiPassword;
   _startupBaselineEstablished = false;
+  _lastWifiConnected = (WiFi.status() == WL_CONNECTED);
 
-  WiFi.mode(WIFI_STA);
+  // Preserve WIFI_AP_STA mode so the local SoftAP remains active alongside station Wi-Fi
+  if (WiFi.getMode() != WIFI_AP_STA) {
+    WiFi.mode(WIFI_AP_STA);
+  }
   WiFi.setAutoReconnect(true);
 
   if (_ssid.length() > 0) {
-    Serial.printf("[Cloud] Connecting to Wi-Fi SSID: %s (Tank: %s)\n", _ssid.c_str(), _tankId.c_str());
     WiFi.begin(_ssid.c_str(), _pass.c_str());
   }
 }
@@ -43,20 +48,43 @@ bool FirebaseClient::isTimeSynchronized() const {
 }
 
 void FirebaseClient::maintainWifi(uint32_t currentMillis) {
-  if (currentMillis - _lastWifiCheckMs < 5000) {
-    return;
-  }
-  _lastWifiCheckMs = currentMillis;
+  bool currentConnected = (WiFi.status() == WL_CONNECTED);
 
-  if (WiFi.status() == WL_CONNECTED && !_ntpConfigured) {
-    configTime(0, 0, "pool.ntp.org", "time.google.com");
-    _ntpConfigured = true;
-    Serial.println(F("[Cloud] Synchronizing network time via NTP (UTC)..."));
+  // Transition: Just Connected
+  if (currentConnected && !_lastWifiConnected) {
+    _lastWifiConnected = true;
+    Serial.println();
+    Serial.println(F("========================================================="));
+    Serial.printf("[Wi-Fi] SUCCESS: Connected to '%s'!\n", _ssid.c_str());
+    Serial.printf("[Wi-Fi] Station IP : %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[Wi-Fi] Signal RSSI: %d dBm\n", WiFi.RSSI());
+    Serial.println(F("[Cloud] Online operations ACTIVATED: Pushing telemetry & polling commands."));
+    Serial.println(F("========================================================="));
+
+    if (!_ntpConfigured) {
+      configTime(0, 0, "pool.ntp.org", "time.google.com");
+      _ntpConfigured = true;
+      Serial.println(F("[Cloud] Synchronizing network time via NTP (UTC)..."));
+    }
+  }
+  // Transition: Just Disconnected
+  else if (!currentConnected && _lastWifiConnected) {
+    _lastWifiConnected = false;
+    Serial.println();
+    Serial.println(F("========================================================="));
+    Serial.printf("[Wi-Fi] Disconnected from '%s'!\n", _ssid.c_str());
+    Serial.println(F("[Cloud] Cloud operations PAUSED. Local services remain active."));
+    Serial.println(F("[Local] Dashboard accessible at http://192.168.4.1"));
+    Serial.println(F("========================================================="));
   }
 
-  if (WiFi.status() != WL_CONNECTED && _ssid.length() > 0) {
-    Serial.println("[Cloud] Wi-Fi link down. Attempting reconnect...");
-    WiFi.reconnect();
+  // Graceful periodic background reconnect attempt (every 15s)
+  if (!currentConnected && _ssid.length() > 0) {
+    if (currentMillis - _lastReconnectAttemptMs >= 15000) {
+      _lastReconnectAttemptMs = currentMillis;
+      Serial.printf("[Wi-Fi] Background reconnect attempt to '%s' (Status: %d)...\n", _ssid.c_str(), (int)WiFi.status());
+      WiFi.reconnect();
+    }
   }
 }
 
@@ -105,6 +133,12 @@ bool FirebaseClient::publishTelemetry(const TelemetryPacket& telemetry) {
   doc["pumpState"] = telemetry.pumpState;
   doc["controlMode"] = telemetry.controlMode;
   doc["sensorStatus"] = telemetry.sensorStatus;
+  if (telemetry.controllerStatus != nullptr) {
+    doc["controllerStatus"] = telemetry.controllerStatus;
+  }
+  if (telemetry.faultCode != nullptr) {
+    doc["faultCode"] = telemetry.faultCode;
+  }
   doc["wifiConnected"] = true;
   doc["updatedAt"] = (double)telemetry.timestampMs;
 

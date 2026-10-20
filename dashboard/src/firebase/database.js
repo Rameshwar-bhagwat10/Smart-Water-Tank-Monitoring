@@ -1,278 +1,231 @@
-import {
-  ref,
-  onValue,
-  set,
-  query,
-  limitToLast
-} from 'firebase/database';
-import { db } from './config.js';
-import { validateLiveTelemetry, validateCommandPayload } from './validation.js';
-
-let commandInFlight = false;
+import { db, isConfigured } from './config.js';
+import { ref, onValue, set, get, update, off } from 'firebase/database';
 
 /**
- * Subscribe to the special Firebase RTDB connection status node.
+ * Listen to live telemetry data for a tank
+ * Returns an unsubscribe function
  */
-export function subscribeToDatabaseConnection(callback) {
-  if (!db) {
-    callback(false);
-    return () => {};
-  }
-
-  const connectedRef = ref(db, '.info/connected');
-  return onValue(connectedRef, (snap) => {
-    callback(snap.val() === true);
-  }, (err) => {
-    console.warn('[Firebase DB] Connection listener warning:', err.message);
-    callback(false);
+export function listenToTelemetry(tankId, callback) {
+  if (!isConfigured) return () => {};
+  const telemetryRef = ref(db, `tanks/${tankId}/live`);
+  onValue(telemetryRef, (snapshot) => {
+    const data = snapshot.val();
+    callback(data);
+  }, (error) => {
+    console.error('[Firebase DB] Telemetry listener error:', error);
+    callback(null);
   });
+  return () => off(telemetryRef);
 }
 
 /**
- * Subscribe to live telemetry for a specific tank at /tanks/{tankId}/live.
+ * Send a command to the tank (mode change, pump control)
  */
-export function subscribeToTankLive(tankId, onData, onError) {
-  if (!db || !tankId) {
-    if (onError) onError(new Error('Firebase Database or tankId is not provided.'));
-    return () => {};
-  }
-
-  const liveRef = ref(db, `tanks/${tankId}/live`);
-
-  return onValue(
-    liveRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData(null);
-        return;
-      }
-      const raw = snapshot.val();
-      const validated = validateLiveTelemetry(raw);
-      onData(validated);
-    },
-    (error) => {
-      console.error(`[Firebase DB] Error reading live telemetry for ${tankId}:`, error.message);
-      if (onError) onError(error);
-    }
-  );
-}
-
-/**
- * Subscribe to historical records for a specific tank at /tanks/{tankId}/history.
- */
-export function subscribeToTankHistory(tankId, onData, onError, limit = 50) {
-  if (!db || !tankId) {
-    if (onError) onError(new Error('Firebase Database or tankId is not provided.'));
-    return () => {};
-  }
-
-  const historyRef = query(ref(db, `tanks/${tankId}/history`), limitToLast(limit));
-
-  return onValue(
-    historyRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData([]);
-        return;
-      }
-      const historyList = [];
-      snapshot.forEach((child) => {
-        historyList.push({
-          id: child.key,
-          ...child.val()
-        });
-      });
-      onData(historyList);
-    },
-    (error) => {
-      console.error(`[Firebase DB] Error reading history for ${tankId}:`, error.message);
-      if (onError) onError(error);
-    }
-  );
-}
-
-/**
- * Subscribe to alerts for a specific tank at /tanks/{tankId}/alerts.
- */
-export function subscribeToTankAlerts(tankId, onData, onError, limit = 20) {
-  if (!db || !tankId) {
-    if (onError) onError(new Error('Firebase Database or tankId is not provided.'));
-    return () => {};
-  }
-
-  const alertsRef = query(ref(db, `tanks/${tankId}/alerts`), limitToLast(limit));
-
-  return onValue(
-    alertsRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData([]);
-        return;
-      }
-      const alertsList = [];
-      snapshot.forEach((child) => {
-        alertsList.push({
-          id: child.key,
-          ...child.val()
-        });
-      });
-      onData(alertsList.reverse());
-    },
-    (error) => {
-      console.error(`[Firebase DB] Error reading alerts for ${tankId}:`, error.message);
-      if (onError) onError(error);
-    }
-  );
-}
-
-/**
- * Admin Fleet Overview: Subscribe to all tanks in /tanks.
- */
-export function subscribeToAllTanks(onData, onError) {
-  if (!db) {
-    if (onError) onError(new Error('Database is not initialized.'));
-    return () => {};
-  }
-
-  const tanksRef = ref(db, 'tanks');
-  return onValue(
-    tanksRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData({});
-        return;
-      }
-      onData(snapshot.val());
-    },
-    (error) => {
-      console.error('[Firebase DB] Error reading tanks fleet:', error.message);
-      if (onError) onError(error);
-    }
-  );
-}
-
-/**
- * Admin User Management: Subscribe to all user records in /users.
- */
-export function subscribeToAllUsers(onData, onError) {
-  if (!db) {
-    if (onError) onError(new Error('Database is not initialized.'));
-    return () => {};
-  }
-
-  const usersRef = ref(db, 'users');
-  return onValue(
-    usersRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData({});
-        return;
-      }
-      onData(snapshot.val());
-    },
-    (error) => {
-      console.error('[Firebase DB] Error reading users directory:', error.message);
-      if (onError) onError(error);
-    }
-  );
-}
-
-/**
- * Submit pump command to /tanks/{tankId}/commands.
- */
-export async function submitTankCommand(tankId, { requestedMode, requestedPumpState }, currentUser, userProfile) {
-  if (!db || !tankId) {
-    throw new Error('Database or tank ID is not initialized.');
-  }
-
-  if (!currentUser || !currentUser.uid) {
-    throw new Error('You must be signed in to submit commands.');
-  }
-
-  // Permission check: Admin can control any tank; Operator can only control their assigned tank
-  const isAdmin = userProfile?.role === 'admin';
-  const isAssignedOperator = userProfile?.role === 'operator' && userProfile?.assignedTankId === tankId;
-
-  if (!isAdmin && !isAssignedOperator) {
-    throw new Error(`Unauthorized: You are not assigned to manage tank '${tankId}'.`);
-  }
-
-  if (commandInFlight) {
-    throw new Error('A command is already being processed. Please wait.');
-  }
-
-  const commandId = `cmd_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const payload = {
-    requestedMode,
-    requestedPumpState,
-    commandId,
+export async function sendCommand(tankId, userId, mode, pumpState) {
+  if (!isConfigured) throw new Error('Firebase not configured');
+  const commandRef = ref(db, `tanks/${tankId}/commands`);
+  const commandId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  await set(commandRef, {
+    commandId: commandId,
+    requestedMode: mode,
+    requestedPumpState: pumpState,
     requestedAt: Date.now(),
-    requestedBy: currentUser.uid
-  };
-
-  const validation = validateCommandPayload(payload, currentUser.uid);
-  if (!validation.valid) {
-    throw new Error(`Command validation failed: ${validation.error}`);
-  }
-
-  commandInFlight = true;
-  try {
-    const commandsRef = ref(db, `tanks/${tankId}/commands`);
-    await set(commandsRef, payload);
-    console.log(`[Firebase DB] Command ${commandId} submitted successfully to tanks/${tankId}/commands.`);
-    return { success: true, commandId, payload };
-  } catch (error) {
-    console.error(`[Firebase DB] Command submission failed:`, error.message);
-    throw error;
-  } finally {
-    commandInFlight = false;
-  }
+    requestedBy: userId
+  });
+  return commandId;
 }
 
 /**
- * Subscribe to command acknowledgements at /tanks/{tankId}/commandAcks.
+ * Listen to command acknowledgments
  */
-export function subscribeToCommandAcks(tankId, onData, onError, limit = 10) {
-  if (!db || !tankId) {
-    if (onError) onError(new Error('Firebase Database or tankId is not provided.'));
-    return () => {};
-  }
+export function listenToCommandAcks(tankId, callback) {
+  if (!isConfigured) return () => {};
+  const acksRef = ref(db, `tanks/${tankId}/commandAcks`);
+  onValue(acksRef, (snapshot) => {
+    callback(snapshot.val());
+  });
+  return () => off(acksRef);
+}
 
-  const acksRef = query(ref(db, `tanks/${tankId}/commandAcks`), limitToLast(limit));
-
-  return onValue(
-    acksRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData({});
-        return;
+/**
+ * Scans tanks sequentially (tank-01, tank-02, tank-03...) to find the tank
+ * owned by this user, or the next available unused tank slot.
+ * Ensures every user gets their own separate tank.
+ */
+export async function allocateTankForUser(uid, preferredTankId = null) {
+  // If user already has a preferred tank, check if it's already theirs or free
+  if (preferredTankId) {
+    try {
+      const liveSnap = await get(ref(db, `tanks/${preferredTankId}/live`));
+      if (!liveSnap.exists()) {
+        // Preferred tank is completely free
+        return preferredTankId;
       }
-      onData(snapshot.val());
-    },
-    (error) => {
-      console.error(`[Firebase DB] Error reading command acks for ${tankId}:`, error.message);
-      if (onError) onError(error);
+      const data = liveSnap.val();
+      // If already owned by this user, keep it!
+      if (!data.ownerUid || data.ownerUid === uid) {
+        return preferredTankId;
+      }
+      // If owned by someone else, user was mistakenly sharing! Allocate a separate tank.
+    } catch (e) {
+      console.warn(`[Firebase DB] Error checking preferred tank ${preferredTankId}:`, e);
     }
-  );
+  }
+
+  // Scan tank-01 through tank-99 to find free or user-owned tank
+  for (let i = 1; i <= 99; i++) {
+    const candidateId = `tank-${String(i).padStart(2, '0')}`;
+    try {
+      const snap = await get(ref(db, `tanks/${candidateId}/live`));
+      if (!snap.exists()) {
+        // candidateId is free!
+        return candidateId;
+      }
+      const liveData = snap.val();
+      if (liveData && liveData.ownerUid === uid) {
+        // User already owns this candidate tank!
+        return candidateId;
+      }
+    } catch (err) {
+      console.warn(`[Firebase DB] Error scanning candidate ${candidateId}:`, err);
+    }
+  }
+
+  return `tank-${uid.substring(0, 6)}`;
 }
 
 /**
- * Record a command acknowledgement at /tanks/{tankId}/commandAcks/{commandId}.
+ * Fully initializes all 4 child nodes for a tank matching initial JSON:
+ * - /tanks/${tankId}/live
+ * - /tanks/${tankId}/commands
+ * - /tanks/${tankId}/commandAcks/${cmdId}
+ * - /tanks/${tankId}/alerts/init
  */
-export async function recordCommandAck(tankId, commandId, { status, reason = '' }) {
-  if (!db || !tankId || !commandId) {
-    throw new Error('Database, tankId, and commandId are required.');
-  }
-
-  const ackRef = ref(db, `tanks/${tankId}/commandAcks/${commandId}`);
-  const payload = {
-    commandId,
-    status, // 'RECEIVED' | 'APPLIED' | 'REJECTED' | 'FAILED'
-    appliedAt: Date.now(),
-    reason: String(reason || '')
+export async function createTankStructure(tankId, uid, email) {
+  const initialLive = {
+    levelPercent: 75.0,
+    distanceCm: 25.0,
+    flowRateLpm: 0.0,
+    totalLitres: 0.0,
+    pumpCurrentA: 0.0,
+    pumpState: 'OFF',
+    controlMode: 'AUTO',
+    controllerStatus: 'IDLE',
+    sensorStatus: 'OK',
+    faultCode: 'NONE',
+    wifiConnected: true,
+    updatedAt: Date.now(),
+    ownerUid: uid,
+    assignedUserEmail: email || ''
   };
 
-  await set(ackRef, payload);
-  return payload;
+  const initialCmdId = 'cmd_init_' + Date.now();
+  const initialCmd = {
+    commandId: initialCmdId,
+    requestedMode: 'AUTO',
+    requestedPumpState: 'OFF',
+    requestedAt: Date.now(),
+    requestedBy: uid
+  };
+
+  const initialAck = {
+    status: 'PROCESSED',
+    message: 'System baseline initialized',
+    timestamp: Date.now()
+  };
+
+  const initialAlert = {
+    type: 'INFO',
+    message: `Smart Tank System Online (${tankId})`,
+    timestamp: Date.now()
+  };
+
+  // Write all 4 child nodes in parallel
+  await Promise.all([
+    set(ref(db, `tanks/${tankId}/live`), initialLive),
+    set(ref(db, `tanks/${tankId}/commands`), initialCmd),
+    set(ref(db, `tanks/${tankId}/commandAcks/${initialCmdId}`), initialAck),
+    set(ref(db, `tanks/${tankId}/alerts/init`), initialAlert)
+  ]);
+
+  console.log(`[Firebase DB] Created complete separate tank structure for ${tankId} (owner: ${uid})`);
 }
 
+/**
+ * Ensures user profile exists AND allocates a unique separate tank for each user.
+ * Automatically creates all missing user fields & tank fields upon login.
+ * Only runs for authenticated Firebase Auth users.
+ */
+export async function ensureUserAndTankData(uid, email) {
+  if (!isConfigured || !uid) return null;
+
+  const userRef = ref(db, `users/${uid}`);
+  let existingProfile = null;
+  try {
+    const userSnap = await get(userRef);
+    if (userSnap.exists()) {
+      existingProfile = userSnap.val();
+    }
+  } catch (err) {
+    console.warn('[Firebase DB] Error checking user profile:', err);
+  }
+
+  // Allocate a separate, dedicated tank for this user
+  const assignedTankId = await allocateTankForUser(uid, existingProfile?.assignedTankId);
+
+  // Update / create user profile with their unique assignedTankId
+  const userProfile = {
+    email: email || existingProfile?.email || '',
+    assignedTankId: assignedTankId,
+    role: existingProfile?.role || 'operator',
+    createdAt: existingProfile?.createdAt || Date.now(),
+    lastLogin: Date.now()
+  };
+
+  try {
+    await set(userRef, userProfile);
+    console.log(`[Firebase DB] User profile updated for ${uid}: assigned to ${assignedTankId}`);
+  } catch (err) {
+    console.error('[Firebase DB] Failed to save user profile:', err);
+  }
+
+  // Ensure the separate tank structure exists in RTDB
+  try {
+    const liveSnap = await get(ref(db, `tanks/${assignedTankId}/live`));
+    if (!liveSnap.exists()) {
+      await createTankStructure(assignedTankId, uid, email);
+    } else {
+      // If live exists, ensure ownerUid is tagged to this user
+      const liveData = liveSnap.val();
+      if (!liveData.ownerUid) {
+        await update(ref(db, `tanks/${assignedTankId}/live`), {
+          ownerUid: uid,
+          assignedUserEmail: email || ''
+        });
+      }
+    }
+
+    // Also verify commands node exists
+    const cmdSnap = await get(ref(db, `tanks/${assignedTankId}/commands`));
+    if (!cmdSnap.exists()) {
+      const initialCmdId = 'cmd_init_' + Date.now();
+      await set(ref(db, `tanks/${assignedTankId}/commands`), {
+        commandId: initialCmdId,
+        requestedMode: 'AUTO',
+        requestedPumpState: 'OFF',
+        requestedAt: Date.now(),
+        requestedBy: uid
+      });
+    }
+  } catch (tankErr) {
+    console.error(`[Firebase DB] Error ensuring tank structure for ${assignedTankId}:`, tankErr);
+  }
+
+  return { profile: userProfile, tankId: assignedTankId };
+}
+
+// Aliases for backwards compatibility
+export const ensureUserProfile = ensureUserAndTankData;
+export const saveUserProfile = ensureUserAndTankData;
+
+export { db };

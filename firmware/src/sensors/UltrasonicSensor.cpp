@@ -11,7 +11,18 @@ UltrasonicSensor::UltrasonicSensor(uint8_t trigPin, uint8_t echoPin,
       _fullDistanceCm(fullDistanceCm),
       _lastDistanceCm(-1.0f),
       _lastLevelPercent(-1.0f),
+      _lastMeasureTimeMs(0),
       _status(UltrasonicStatus::INITIALIZING) {}
+
+void UltrasonicSensor::setCalibration(float emptyDistanceCm, float fullDistanceCm) {
+  _emptyDistanceCm = emptyDistanceCm;
+  _fullDistanceCm = fullDistanceCm;
+  if (_emptyDistanceCm <= _fullDistanceCm || _fullDistanceCm < MIN_VALID_DISTANCE_CM) {
+    _status = UltrasonicStatus::CONFIG_ERROR;
+  } else if (_status == UltrasonicStatus::CONFIG_ERROR) {
+    _status = UltrasonicStatus::INITIALIZING;
+  }
+}
 
 void UltrasonicSensor::begin() {
   pinMode(_trigPin, OUTPUT);
@@ -60,8 +71,8 @@ float UltrasonicSensor::readRawDistance() {
   delayMicroseconds(10);
   digitalWrite(_trigPin, LOW);
 
-  // Max range ~400 cm -> ~23320 microseconds max round-trip
-  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 30000;
+  // Max range ~250 cm -> ~14500 microseconds max round-trip
+  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 15000;
   unsigned long duration = pulseIn(_echoPin, HIGH, MAX_ECHO_TIMEOUT_US);
 
   if (duration == 0) {
@@ -79,16 +90,26 @@ bool UltrasonicSensor::measure() {
     return false;
   }
 
-  // 3-sample median filter to eliminate acoustic reflections and electrical spikes
-  float samples[3];
-  int validCount = 0;
+  // Quick 1st sample: if disconnected, abort immediately to avoid blocking CPU
+  float d0 = readRawDistance();
+  if (d0 < 0) {
+    _status = UltrasonicStatus::TIMEOUT;
+    _lastDistanceCm = -1.0f;
+    _lastLevelPercent = -1.0f;
+    return false;
+  }
 
-  for (int i = 0; i < 3; ++i) {
+  // If sensor is connected, take 2 more samples for median filtering
+  float samples[3];
+  samples[0] = d0;
+  int validCount = 1;
+
+  for (int i = 1; i < 3; ++i) {
+    delay(10);
     float d = readRawDistance();
     if (d >= MIN_VALID_DISTANCE_CM && d <= MAX_VALID_DISTANCE_CM) {
       samples[validCount++] = d;
     }
-    if (i < 2) delay(15);
   }
 
   if (validCount == 0) {
@@ -124,6 +145,7 @@ bool UltrasonicSensor::measure() {
 
   _lastDistanceCm = distance;
   _lastLevelPercent = pct;
+  _lastMeasureTimeMs = millis();
   _status = UltrasonicStatus::OK;
   return true;
 }

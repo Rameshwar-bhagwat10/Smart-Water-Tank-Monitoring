@@ -18,6 +18,8 @@ struct TelemetryPacket {
   const char* pumpState;
   const char* controlMode;
   const char* sensorStatus;
+  const char* controllerStatus;
+  const char* faultCode;
   bool isLevelValid;
   unsigned long timestampMs;
 };
@@ -57,6 +59,8 @@ private:
   char _lastProcessedCommandId[65];
   bool _startupBaselineEstablished;
   bool _ntpConfigured;
+  bool _lastWifiConnected;
+  uint32_t _lastReconnectAttemptMs;
   SafetyLockout _lastReportedLockout;
 
   String buildUrl(const String& path) const;

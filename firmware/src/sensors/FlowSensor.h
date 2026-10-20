@@ -15,9 +15,17 @@ public:
   float getTotalLitres() const { return _totalLitres; }
   uint32_t getCumulativePulses() const;
   bool isWaterFlowing() const { return _flowRateLpm > 0.1f; }
+  bool isPlausible() const { return _isPlausible; }
+  uint32_t getLastPulseTimeMs() const { return _lastPulseTimeMs; }
 
   void resetTotalLitres();
   void setTotalLitres(float litres);
+  void setCalibration(float pulsesPerLitre) {
+    if (pulsesPerLitre > 0.0f) _pulsesPerLitre = pulsesPerLitre;
+  }
+  float getCalibration() const { return _pulsesPerLitre; }
+
+  static constexpr float MAX_PLAUSIBLE_LPM = 60.0f;
 
   // Pure static calculations for unit testing
   static float calculateFlowRateLpm(uint32_t pulsesInInterval, uint32_t intervalMs, float pulsesPerLitre);
@@ -32,8 +40,11 @@ private:
 
   float _flowRateLpm;
   float _totalLitres;
+  bool _isPlausible;
+  uint32_t _lastPulseTimeMs;
 
   static volatile uint32_t _interruptPulseCount;
+  static volatile uint32_t _lastInterruptTimeMs;
   uint32_t _lastTotalPulseCount;
 };
 

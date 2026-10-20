@@ -1,9 +1,108 @@
 {
+  "tanks": {
+    "tank-01": {
+      "alerts": {
+        "init": {
+          "message": "Smart Tank System Online (tank-01)",
+          "timestamp": 1792500000000,
+          "type": "INFO"
+        },
+        "auto_fill": {
+          "message": "Auto-filling started: Level reached lower threshold",
+          "timestamp": 1792500810000,
+          "type": "INFO"
+        }
+      },
+      "commandAcks": {
+        "cmd_ram_active_01": {
+          "message": "Automatic fill cycle engaged (Water Level < 85%)",
+          "status": "PROCESSED",
+          "timestamp": 1792500811000
+        }
+      },
+      "commands": {
+        "commandId": "cmd_ram_active_01",
+        "requestedAt": 1792500810000,
+        "requestedBy": "JnCS4InFJ4ZKoiWnUIiDq05d9R42",
+        "requestedMode": "AUTO",
+        "requestedPumpState": "ON"
+      },
+      "live": {
+        "assignedUserEmail": "ram@gmail.com",
+        "controlMode": "AUTO",
+        "controllerStatus": "AUTO_FILLING",
+        "distanceCm": 18.2,
+        "faultCode": "NONE",
+        "flowRateLpm": 14.6,
+        "levelPercent": 82.5,
+        "ownerUid": "JnCS4InFJ4ZKoiWnUIiDq05d9R42",
+        "pumpCurrentA": 2.65,
+        "pumpState": "ON",
+        "sensorStatus": "OK",
+        "totalLitres": 342.8,
+        "updatedAt": 1792500824000,
+        "wifiConnected": true
+      }
+    },
+    "tank-02": {
+      "alerts": {
+        "init": {
+          "message": "Smart Tank System Online (tank-02)",
+          "timestamp": 1792500000000,
+          "type": "INFO"
+        },
+        "cutoff": {
+          "message": "High cutoff reached: Pump safely stopped",
+          "timestamp": 1792500824000,
+          "type": "INFO"
+        }
+      },
+      "commandAcks": {
+        "cmd_init_1792500824088": {
+          "message": "System baseline initialized (Tank Full, Standby)",
+          "status": "PROCESSED",
+          "timestamp": 1792500824088
+        }
+      },
+      "commands": {
+        "commandId": "cmd_init_1792500824088",
+        "requestedAt": 1792500824088,
+        "requestedBy": "f4g161WsdFPz8hS0tH4vxTRdaGn1",
+        "requestedMode": "AUTO",
+        "requestedPumpState": "OFF"
+      },
+      "live": {
+        "assignedUserEmail": "sham@gmail.com",
+        "controlMode": "AUTO",
+        "controllerStatus": "IDLE",
+        "distanceCm": 12.0,
+        "faultCode": "NONE",
+        "flowRateLpm": 0.0,
+        "levelPercent": 94.0,
+        "ownerUid": "f4g161WsdFPz8hS0tH4vxTRdaGn1",
+        "pumpCurrentA": 0.0,
+        "pumpState": "OFF",
+        "sensorStatus": "OK",
+        "totalLitres": 512.4,
+        "updatedAt": 1792500824088,
+        "wifiConnected": true
+      }
+    }
+  },
   "users": {
-    "LV5Rjo5eSsMdMTjFPpD2b5ZGlDp1": {
-      "email": "admin@smartwatertank.local",
-      "role": "admin",
-      "createdAt": 1792424601000
+    "JnCS4InFJ4ZKoiWnUIiDq05d9R42": {
+      "assignedTankId": "tank-01",
+      "createdAt": 1792500000000,
+      "email": "ram@gmail.com",
+      "lastLogin": 1792500534723,
+      "role": "operator"
+    },
+    "f4g161WsdFPz8hS0tH4vxTRdaGn1": {
+      "assignedTankId": "tank-02",
+      "createdAt": 1792500823385,
+      "email": "sham@gmail.com",
+      "lastLogin": 1792500823385,
+      "role": "operator"
     }
   }
 }

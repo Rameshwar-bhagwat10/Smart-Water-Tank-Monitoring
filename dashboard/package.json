@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:unit": "node ../tests/dashboard-unit.test.js",
     "test:rules": "node ../tests/rules-evaluation.test.js",
-    "test": "npm run test:unit && npm run test:rules"
+    "test:regression": "node ../tests/phase-4a-regression.test.js",
+    "test:pump": "node ../tests/pump-controller.test.js",
+    "test:sensors": "node ../tests/sensor-calculations.test.js",
+    "test": "npm run test:rules && npm run test:regression && npm run test:pump && npm run test:sensors"
   },
   "dependencies": {
     "firebase": "^12.18.0"

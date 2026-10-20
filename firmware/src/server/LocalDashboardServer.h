@@ -6,7 +6,6 @@
 #include <DNSServer.h>
 #include "../control/PumpController.h"
 #include "../cloud/FirebaseClient.h"
-#include "../config/ConfigManager.h"
 
 namespace SmartTank {
 
@@ -14,7 +13,7 @@ class LocalDashboardServer {
 public:
   LocalDashboardServer(uint16_t port = 80);
 
-  void begin(const char* tankId);
+  void begin(const char* tankId = "tank-01");
   void handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry);
   void stop();
 
@@ -26,29 +25,12 @@ private:
   const TelemetryPacket* _lastTelemetry;
   PumpController* _pumpCtrl;
 
-  // SEC-002: Session Token & Local API Security
-  String _sessionToken;
-  uint32_t _sessionExpiryMs;
-  uint8_t _failedAuthAttempts;
-  uint32_t _authLockoutUntilMs;
-
-  bool checkAuthentication(const String& token, const String& pin);
-  void recordFailedAuth();
-  void resetFailedAuth();
-
   void setupRoutes();
   void handleRoot();
   void handleApiLive();
-  void handleApiLogin();
   void handleApiCommand();
-  void handleApiWifiSetup();
-  void handleSetupPage();
-  void handleApiScanWifi();
   void handleNotFound();
   void handleCors();
-
-  String buildDashboardHtml();
-  String buildSetupHtml();
 };
 
 } // namespace SmartTank

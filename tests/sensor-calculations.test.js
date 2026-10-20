@@ -178,4 +178,67 @@ describe('Sensor Calculations & Calibration Engine', () => {
       assert.strictEqual(res.currentAmps, 0.87);
     });
   });
+
+  describe('ACS712 Current Sensing with External Voltage Divider Attenuation', () => {
+    const ADC_MAX_VOLTS = 3.3;
+    const SENSITIVITY = 0.185; // 185 mV/A (5A model)
+    const DIVIDER_RATIO = 18.0 / (10.0 + 18.0); // 0.642857 (10k upper, 18k lower)
+    // At zero current, sensor outputs 2.50V. Through divider, voltage at A0 = 2.50 * 0.642857 = 1.6071V.
+    // ADC count = (1.6071 / 3.3) * 1023 ≈ 498 counts.
+    const ZERO_OFFSET_ADC = Math.round((2.50 * DIVIDER_RATIO / ADC_MAX_VOLTS) * 1023); // ~498
+
+    function calculateCurrentWithDivider(adcSample, zeroAdc, dividerRatio = DIVIDER_RATIO) {
+      const vAdc = (adcSample / 1023) * ADC_MAX_VOLTS;
+      const vZero = (zeroAdc / 1023) * ADC_MAX_VOLTS;
+      const vSensor = vAdc / dividerRatio;
+      const vSensorZero = vZero / dividerRatio;
+      const deltaV = Math.abs(vSensor - vSensorZero);
+      let amps = deltaV / SENSITIVITY;
+      if (amps < 0.08) amps = 0.0;
+      return { valid: true, currentAmps: Number(amps.toFixed(2)) };
+    }
+
+    it('reports zero current at calibrated quiescent offset with external divider', () => {
+      const res = calculateCurrentWithDivider(ZERO_OFFSET_ADC, ZERO_OFFSET_ADC);
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(res.currentAmps, 0.0);
+    });
+
+    it('accurately reconstructs sensor voltage and current under 2A load with divider', () => {
+      // At 2.0A: sensor output = 2.50 + (2.0 * 0.185) = 2.87V
+      // At A0 = 2.87 * (18 / 28) = 1.845V
+      // ADC count = (1.845 / 3.3) * 1023 ≈ 572 counts
+      const res = calculateCurrentWithDivider(572, ZERO_OFFSET_ADC);
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(Math.abs(res.currentAmps - 2.0) <= 0.05, true);
+    });
+
+    it('detects motor running when current exceeds threshold (e.g. 0.2A)', () => {
+      const resIdle = calculateCurrentWithDivider(ZERO_OFFSET_ADC, ZERO_OFFSET_ADC);
+      const isMotorRunningIdle = resIdle.currentAmps >= 0.2;
+      assert.strictEqual(isMotorRunningIdle, false);
+
+      const resRunning = calculateCurrentWithDivider(572, ZERO_OFFSET_ADC);
+      const isMotorRunningActive = resRunning.currentAmps >= 0.2;
+      assert.strictEqual(isMotorRunningActive, true);
+    });
+  });
+
+  describe('Flow Sensor Plausibility & Overflow Protection', () => {
+    const PULSES_PER_LITRE = 450.0;
+    const MAX_PLAUSIBLE_LPM = 60.0;
+
+    function checkFlowPlausibility(flowRateLpm) {
+      return flowRateLpm >= 0.0 && flowRateLpm <= MAX_PLAUSIBLE_LPM;
+    }
+
+    it('accepts normal domestic flow rates (e.g. 15 L/min)', () => {
+      assert.strictEqual(checkFlowPlausibility(15.0), true);
+    });
+
+    it('rejects physically impossible flow rates (e.g. >60 L/min for 1/2-inch pipe)', () => {
+      assert.strictEqual(checkFlowPlausibility(85.0), false);
+      assert.strictEqual(checkFlowPlausibility(-2.0), false);
+    });
+  });
 });

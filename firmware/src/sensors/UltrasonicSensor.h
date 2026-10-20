@@ -25,6 +25,15 @@ public:
   UltrasonicStatus getStatus() const { return _status; }
   const char* getStatusString() const;
   bool isReadingValid() const { return _status == UltrasonicStatus::OK; }
+  uint32_t getLastMeasureTimeMs() const { return _lastMeasureTimeMs; }
+  bool isStale(uint32_t currentMillis, uint32_t maxAgeMs = 5000) const {
+    if (_lastMeasureTimeMs == 0) return true;
+    return (currentMillis - _lastMeasureTimeMs) > maxAgeMs;
+  }
+
+  void setCalibration(float emptyDistanceCm, float fullDistanceCm);
+  float getEmptyDistanceCm() const { return _emptyDistanceCm; }
+  float getFullDistanceCm() const { return _fullDistanceCm; }
 
   // Static pure calculation functions (testable independently)
   static float calculateLevelPercent(float distanceCm, float emptyDistanceCm, float fullDistanceCm, bool& isValid);
@@ -38,6 +47,7 @@ private:
 
   float _lastDistanceCm;
   float _lastLevelPercent;
+  uint32_t _lastMeasureTimeMs;
   UltrasonicStatus _status;
 
   float readRawDistance();

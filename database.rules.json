@@ -1,39 +1,21 @@
 {
   "rules": {
     "users": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('enabled').val() !== false",
       "$uid": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.uid === $uid) && root.child('users').child(auth.uid).child('enabled').val() !== false",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('enabled').val() !== false",
-        ".validate": "newData.hasChildren(['email', 'role']) && (newData.child('role').val() === 'admin' || newData.child('role').val() === 'operator')"
-      }
-    },
-    "system": {
-      "tankAllocation": {
-        ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
-    },
-    "deviceRegistry": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      "$deviceUid": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.uid === $deviceUid)",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".validate": "newData.hasChildren(['enabled', 'assignedTankId']) && newData.child('enabled').isBoolean() && newData.child('assignedTankId').isString()"
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['email', 'assignedTankId'])"
       }
     },
     "tanks": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('enabled').val() !== false",
       "$tankId": {
-        ".read": "auth != null && root.child('users').child(auth.uid).child('enabled').val() !== false && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('assignedTankId').val() === $tankId || (root.child('deviceRegistry').child(auth.uid).child('enabled').val() === true && root.child('deviceRegistry').child(auth.uid).child('assignedTankId').val() === $tankId))",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
         "live": {
-          ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('deviceRegistry').child(auth.uid).child('enabled').val() === true && root.child('deviceRegistry').child(auth.uid).child('assignedTankId').val() === $tankId))",
-          ".validate": "newData.hasChildren(['levelPercent', 'pumpState', 'updatedAt'])"
+          ".read": "auth != null",
+          ".write": true
         },
         "commands": {
-          ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('assignedTankId').val() === $tankId || (root.child('deviceRegistry').child(auth.uid).child('enabled').val() === true && root.child('deviceRegistry').child(auth.uid).child('assignedTankId').val() === $tankId))",
-          ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('assignedTankId').val() === $tankId) && newData.exists() && root.child('users').child(auth.uid).child('enabled').val() !== false",
+          ".read": true,
+          ".write": "auth != null",
           ".validate": "newData.hasChildren(['requestedMode', 'requestedPumpState', 'commandId', 'requestedAt', 'requestedBy'])",
           "requestedMode": {
             ".validate": "newData.isString() && (newData.val() === 'AUTO' || newData.val() === 'MANUAL')"
@@ -42,52 +24,25 @@
             ".validate": "newData.isString() && (newData.val() === 'ON' || newData.val() === 'OFF')"
           },
           "commandId": {
-            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64"
+            ".validate": "newData.isString() && newData.val().length > 0"
           },
           "requestedAt": {
-            ".validate": "newData.isNumber() && newData.val() >= 0"
+            ".validate": "newData.isNumber()"
           },
           "requestedBy": {
             ".validate": "newData.isString() && newData.val() === auth.uid"
-          },
-          "$other": {
-            ".validate": false
           }
         },
         "commandAcks": {
-          ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('assignedTankId').val() === $tankId)",
+          ".read": "auth != null",
           "$commandId": {
-            ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('deviceRegistry').child(auth.uid).child('enabled').val() === true && root.child('deviceRegistry').child(auth.uid).child('assignedTankId').val() === $tankId))",
-            ".validate": "newData.hasChildren(['status', 'appliedAt', 'commandId'])",
-            "status": {
-              ".validate": "newData.isString() && (newData.val() === 'RECEIVED' || newData.val() === 'APPLIED' || newData.val() === 'REJECTED' || newData.val() === 'FAILED')"
-            },
-            "commandId": {
-              ".validate": "newData.isString() && newData.val() === $commandId"
-            },
-            "appliedAt": {
-              ".validate": "newData.isNumber() && newData.val() >= 0"
-            },
-            "reason": {
-              ".validate": "newData.isString()"
-            },
-            "$other": {
-              ".validate": false
-            }
-          }
-        },
-        "history": {
-          ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('assignedTankId').val() === $tankId)",
-          "$logId": {
-            ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('deviceRegistry').child(auth.uid).child('enabled').val() === true && root.child('deviceRegistry').child(auth.uid).child('assignedTankId').val() === $tankId))",
-            ".validate": "newData.hasChildren(['timestamp', 'levelPercent', 'pumpState'])"
+            ".write": true
           }
         },
         "alerts": {
-          ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('assignedTankId').val() === $tankId)",
+          ".read": "auth != null",
           "$alertId": {
-            ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('deviceRegistry').child(auth.uid).child('enabled').val() === true && root.child('deviceRegistry').child(auth.uid).child('assignedTankId').val() === $tankId))",
-            ".validate": "newData.hasChildren(['alertId', 'createdAt', 'severity', 'type', 'message'])"
+            ".write": true
           }
         }
       }

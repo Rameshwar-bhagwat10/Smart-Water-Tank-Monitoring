@@ -1,14 +1,15 @@
 #include "CurrentSensor.h"
-#include "../config/AppConfig.h"
 #include <math.h>
 
 namespace SmartTank {
 
-CurrentSensor::CurrentSensor(uint8_t pin, float sensitivityMvPerA, float zeroOffsetMv)
+CurrentSensor::CurrentSensor(uint8_t pin, float sensitivityMvPerA, float zeroOffsetMv, float dividerRatio)
     : _pin(pin),
       _sensitivityMvPerA(sensitivityMvPerA > 0.0f ? sensitivityMvPerA : ACS712_SENSITIVITY_MV_PER_A),
       _zeroOffsetMv(zeroOffsetMv),
-      _lastCurrentA(0.0f) {}
+      _dividerRatio(dividerRatio > 0.0f && dividerRatio <= 1.0f ? dividerRatio : ACS712_DIVIDER_RATIO),
+      _lastCurrentA(0.0f),
+      _lastRawAdc(0) {}
 
 void CurrentSensor::begin() {
   pinMode(_pin, INPUT);
@@ -22,15 +23,27 @@ float CurrentSensor::rawAdcToMillivolts(int rawAdc, float refVoltageMv, int maxC
   return (static_cast<float>(rawAdc) * refVoltageMv) / static_cast<float>(maxCounts);
 }
 
-float CurrentSensor::voltageDeltaToAmperes(float voltageMv, float zeroOffsetMv, float sensitivityMvPerA) {
+float CurrentSensor::adcMillivoltsToSensorMillivolts(float adcMv, float dividerRatio) {
+  if (dividerRatio <= 0.0f || dividerRatio > 1.0f) return adcMv;
+  return adcMv / dividerRatio;
+}
+
+float CurrentSensor::voltageDeltaToAmperes(float sensorVoltageMv, float zeroOffsetMv, float sensitivityMvPerA) {
   if (sensitivityMvPerA <= 0.0f) return 0.0f;
-  float delta = fabsf(voltageMv - zeroOffsetMv);
+  float delta = fabsf(sensorVoltageMv - zeroOffsetMv);
   float amps = delta / sensitivityMvPerA;
   // Apply 0.08A noise floor gate
   if (amps < 0.08f) {
     amps = 0.0f;
   }
   return amps;
+}
+
+float CurrentSensor::rawAdcToCurrentAmperes(int rawAdc, float zeroOffsetMv, float sensitivityMvPerA,
+                                            float dividerRatio, float refVoltageMv, int maxCounts) {
+  float adcV = rawAdcToMillivolts(rawAdc, refVoltageMv, maxCounts);
+  float sensorV = adcMillivoltsToSensorMillivolts(adcV, dividerRatio);
+  return voltageDeltaToAmperes(sensorV, zeroOffsetMv, sensitivityMvPerA);
 }
 
 void CurrentSensor::calibrateZero() {
@@ -42,20 +55,28 @@ void CurrentSensor::calibrateZero() {
     delay(2);
   }
   float avgAdc = static_cast<float>(sumAdc) / static_cast<float>(CAL_SAMPLES);
-  _zeroOffsetMv = rawAdcToMillivolts(static_cast<int>(avgAdc), ADC_VOLTAGE_REF_MV, ADC_MAX_COUNTS);
+  _lastRawAdc = static_cast<int>(avgAdc);
+
+  float adcV = rawAdcToMillivolts(_lastRawAdc, ADC_VOLTAGE_REF_MV, ADC_MAX_COUNTS);
+  _zeroOffsetMv = adcMillivoltsToSensorMillivolts(adcV, _dividerRatio);
 }
 
 float CurrentSensor::measureRmsCurrent(uint16_t samples) {
   if (samples == 0) samples = 100;
 
   double sumSquares = 0.0;
+  int latestRaw = 0;
+
   for (uint16_t i = 0; i < samples; ++i) {
-    int raw = analogRead(_pin);
-    float vMv = rawAdcToMillivolts(raw, ADC_VOLTAGE_REF_MV, ADC_MAX_COUNTS);
-    float currentInstant = (vMv - _zeroOffsetMv) / _sensitivityMvPerA;
+    latestRaw = analogRead(_pin);
+    float adcV = rawAdcToMillivolts(latestRaw, ADC_VOLTAGE_REF_MV, ADC_MAX_COUNTS);
+    float sensorV = adcMillivoltsToSensorMillivolts(adcV, _dividerRatio);
+    float currentInstant = (sensorV - _zeroOffsetMv) / _sensitivityMvPerA;
     sumSquares += (currentInstant * currentInstant);
     delayMicroseconds(200);
   }
+
+  _lastRawAdc = latestRaw;
 
   double meanSquare = sumSquares / static_cast<double>(samples);
   float rms = static_cast<float>(sqrt(meanSquare));
@@ -70,3 +91,4 @@ float CurrentSensor::measureRmsCurrent(uint16_t samples) {
 }
 
 } // namespace SmartTank
+

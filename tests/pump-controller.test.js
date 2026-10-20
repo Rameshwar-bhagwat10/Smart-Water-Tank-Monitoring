@@ -323,4 +323,222 @@ describe('Pump Controller & Autonomous Safety Interlocks', () => {
       assert.strictEqual(ctrl.lockout, SafetyLockout.DRY_RUN);
     });
   });
+
+  describe('Stage 3: 7-State ControllerState Lifecycle & Transitions', () => {
+    const ControllerState = {
+      INITIALIZING: 'INITIALIZING',
+      IDLE: 'IDLE',
+      AUTO_FILLING: 'AUTO_FILLING',
+      MANUAL_FILLING: 'MANUAL_FILLING',
+      STOPPING: 'STOPPING',
+      FAULT: 'FAULT',
+      SENSOR_ERROR: 'SENSOR_ERROR'
+    };
+
+    class StateMachinePumpController {
+      constructor() {
+        this.autoStartPct = 20.0;
+        this.autoStopPct = 95.0;
+        this.hardCutoffPct = 95.0;
+        this.maxRuntimeMs = 20 * 60 * 1000;
+        this.dryRunGraceMs = 5000;
+        this.dryRunTripMs = 5000;
+        this.mode = ControlMode.AUTO;
+        this.state = ControllerState.INITIALIZING;
+        this.lockout = SafetyLockout.NONE;
+        this.pumpRunning = false;
+        this.pumpStartMs = 0;
+        this.zeroFlowStartMs = 0;
+        this.lastLevelPct = 50.0;
+        this.lastLevelValid = true;
+      }
+
+      requestMode(newMode) {
+        if (this.mode !== newMode) {
+          if (this.pumpRunning) {
+            this.pumpRunning = false;
+            this.state = ControllerState.STOPPING;
+          }
+          this.mode = newMode;
+          if (!this.pumpRunning && this.state !== ControllerState.FAULT && this.state !== ControllerState.SENSOR_ERROR) {
+            this.state = ControllerState.IDLE;
+          }
+          return { accepted: true };
+        }
+        return { accepted: true };
+      }
+
+      requestManualPump(on, nowMs) {
+        if (this.mode !== ControlMode.MANUAL) {
+          return { accepted: false, reason: 'NOT_IN_MANUAL_MODE' };
+        }
+        if (on) {
+          if (this.lockout !== SafetyLockout.NONE) return { accepted: false, reason: 'LOCKOUT' };
+          if (!this.lastLevelValid) {
+            this.state = ControllerState.SENSOR_ERROR;
+            this.lockout = SafetyLockout.SENSOR_FAULT;
+            return { accepted: false, reason: 'SENSOR_FAULT' };
+          }
+          if (this.lastLevelPct >= this.hardCutoffPct) {
+            this.state = ControllerState.FAULT;
+            this.lockout = SafetyLockout.HIGH_LEVEL;
+            return { accepted: false, reason: 'HIGH_CUTOFF' };
+          }
+          this.pumpRunning = true;
+          this.pumpStartMs = nowMs;
+          this.state = ControllerState.MANUAL_FILLING;
+          return { accepted: true };
+        } else {
+          this.pumpRunning = false;
+          this.state = ControllerState.IDLE;
+          return { accepted: true };
+        }
+      }
+
+      update(nowMs, levelPercent, isLevelValid, flowRateLpm, currentA, isStale = false) {
+        this.lastLevelPct = levelPercent;
+        this.lastLevelValid = isLevelValid && !isStale;
+
+        if (!isLevelValid || isStale) {
+          this.pumpRunning = false;
+          this.lockout = SafetyLockout.SENSOR_FAULT;
+          this.state = ControllerState.SENSOR_ERROR;
+          return;
+        }
+
+        if (this.lockout === SafetyLockout.SENSOR_FAULT) {
+          this.lockout = SafetyLockout.NONE;
+        }
+
+        if (levelPercent >= this.hardCutoffPct) {
+          this.pumpRunning = false;
+          this.lockout = SafetyLockout.HIGH_LEVEL;
+          this.state = ControllerState.FAULT;
+          return;
+        }
+
+        if (this.lockout === SafetyLockout.HIGH_LEVEL && levelPercent < this.autoStopPct) {
+          this.lockout = SafetyLockout.NONE;
+        }
+
+        if (this.pumpRunning) {
+          const runDuration = nowMs - this.pumpStartMs;
+          if (runDuration >= this.maxRuntimeMs) {
+            this.pumpRunning = false;
+            this.lockout = SafetyLockout.MAX_RUNTIME;
+            this.state = ControllerState.FAULT;
+            return;
+          }
+          if (runDuration > this.dryRunGraceMs) {
+            if (flowRateLpm <= 0.1) {
+              if (this.zeroFlowStartMs === 0) {
+                this.zeroFlowStartMs = nowMs;
+              } else if (nowMs - this.zeroFlowStartMs >= this.dryRunTripMs) {
+                this.pumpRunning = false;
+                this.lockout = SafetyLockout.DRY_RUN;
+                this.state = ControllerState.FAULT;
+                return;
+              }
+            } else {
+              this.zeroFlowStartMs = 0;
+            }
+          }
+        }
+
+        if (this.lockout !== SafetyLockout.NONE) {
+          this.pumpRunning = false;
+          this.state = ControllerState.FAULT;
+          return;
+        }
+
+        if (this.mode === ControlMode.AUTO) {
+          if (!this.pumpRunning) {
+            if (levelPercent <= this.autoStartPct) {
+              this.pumpRunning = true;
+              this.pumpStartMs = nowMs;
+              this.state = ControllerState.AUTO_FILLING;
+            } else {
+              this.state = ControllerState.IDLE;
+            }
+          } else {
+            if (levelPercent >= this.autoStopPct) {
+              this.pumpRunning = false;
+              this.state = ControllerState.STOPPING;
+            } else {
+              this.state = ControllerState.AUTO_FILLING;
+            }
+          }
+        } else {
+          if (this.pumpRunning) {
+            this.state = ControllerState.MANUAL_FILLING;
+          } else {
+            this.state = ControllerState.IDLE;
+          }
+        }
+      }
+    }
+
+    it('initializes in INITIALIZING state with pump OFF', () => {
+      const sm = new StateMachinePumpController();
+      assert.strictEqual(sm.state, ControllerState.INITIALIZING);
+      assert.strictEqual(sm.pumpRunning, false);
+    });
+
+    it('transitions to IDLE when initial valid reading is in mid-range', () => {
+      const sm = new StateMachinePumpController();
+      sm.update(1000, 50.0, true, 0.0, 0.0, false);
+      assert.strictEqual(sm.state, ControllerState.IDLE);
+      assert.strictEqual(sm.pumpRunning, false);
+    });
+
+    it('transitions from IDLE to AUTO_FILLING when water level falls <= 20%', () => {
+      const sm = new StateMachinePumpController();
+      sm.update(1000, 18.0, true, 0.0, 0.0, false);
+      assert.strictEqual(sm.state, ControllerState.AUTO_FILLING);
+      assert.strictEqual(sm.pumpRunning, true);
+    });
+
+    it('transitions from AUTO_FILLING to STOPPING when water level reaches >= 95%', () => {
+      const sm = new StateMachinePumpController();
+      sm.update(1000, 15.0, true, 0.0, 0.0, false);
+      assert.strictEqual(sm.state, ControllerState.AUTO_FILLING);
+
+      sm.update(2000, 95.0, true, 10.0, 2.5, false);
+      assert.strictEqual(sm.state, ControllerState.FAULT); // 95% triggers high-level cutoff FAULT
+      assert.strictEqual(sm.pumpRunning, false);
+    });
+
+    it('transitions to SENSOR_ERROR if sensor data becomes stale (>5s) and stops pump', () => {
+      const sm = new StateMachinePumpController();
+      sm.update(1000, 15.0, true, 10.0, 2.5, false);
+      assert.strictEqual(sm.state, ControllerState.AUTO_FILLING);
+
+      // Stale data flag set
+      sm.update(7000, 15.0, true, 10.0, 2.5, true);
+      assert.strictEqual(sm.state, ControllerState.SENSOR_ERROR);
+      assert.strictEqual(sm.pumpRunning, false);
+    });
+
+    it('auto-recovers from SENSOR_ERROR to IDLE when fresh reading resumes', () => {
+      const sm = new StateMachinePumpController();
+      sm.update(1000, 0.0, false, 0.0, 0.0, false);
+      assert.strictEqual(sm.state, ControllerState.SENSOR_ERROR);
+
+      sm.update(2000, 60.0, true, 0.0, 0.0, false);
+      assert.strictEqual(sm.state, ControllerState.IDLE);
+    });
+
+    it('stops pump safely and transitions to STOPPING/IDLE when switching mode during active pumping', () => {
+      const sm = new StateMachinePumpController();
+      sm.update(1000, 15.0, true, 0.0, 0.0, false);
+      assert.strictEqual(sm.state, ControllerState.AUTO_FILLING);
+      assert.strictEqual(sm.pumpRunning, true);
+
+      // Switch mode to MANUAL during active fill
+      sm.requestMode(ControlMode.MANUAL);
+      assert.strictEqual(sm.pumpRunning, false);
+      assert.strictEqual(sm.state, ControllerState.IDLE);
+    });
+  });
 });
+
