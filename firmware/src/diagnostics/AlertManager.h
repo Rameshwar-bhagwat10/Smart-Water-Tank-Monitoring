@@ -1,0 +1,27 @@
+#pragma once
+
+#include <Arduino.h>
+#include "../control/PumpController.h"
+
+namespace SmartTank {
+
+class AlertManager {
+public:
+  AlertManager(uint8_t greenLedPin, uint8_t yellowLedPin, uint8_t redLedPin, uint8_t buzzerPin);
+
+  void begin();
+  void update(uint32_t currentMillis, bool wifiConnected, bool pumpRunning, SafetyLockout lockout);
+  void triggerChirp(uint16_t durationMs = 100);
+
+private:
+  uint8_t _greenLed;
+  uint8_t _yellowLed;
+  uint8_t _redLed;
+  uint8_t _buzzer;
+
+  uint32_t _lastBlinkMillis;
+  bool _blinkState;
+  uint32_t _chirpEndMillis;
+};
+
+} // namespace SmartTank
