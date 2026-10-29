@@ -229,6 +229,7 @@ npm run build
 ---
 
 ## Documentation Links
+- [MULTI_DEVICE_SETUP.md](file:///d:/projects/Smart%20Water%20Tank/MULTI_DEVICE_SETUP.md) — **Multi-Device Setup & Operation Guide** (Operate from Phone/Tablet/Laptop, or install on another PC).
 - [docs/architecture.md](file:///d:/projects/Smart%20Water%20Tank/docs/architecture.md) — Complete 4-layer system architecture, data/command flows, safety rules, and security.
 - [docs/firebase-setup.md](file:///d:/projects/Smart%20Water%20Tank/docs/firebase-setup.md) — Firebase configuration, user provisioning, deployment, and troubleshooting.
 - [docs/firebase-security.md](file:///d:/projects/Smart%20Water%20Tank/docs/firebase-security.md) — Security rules breakdown, RBAC model, device auth strategy, and secrets management.
