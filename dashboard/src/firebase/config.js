@@ -3,65 +3,85 @@ import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth'
 import { getDatabase } from 'firebase/database';
 
 /**
- * Validate that mandatory Firebase client environment variables are defined.
+ * Standard project fallback configuration.
  * Note: Firebase Web configuration identifies public project resources and is not
- * an authorization mechanism. Access is enforced by Firebase Security Rules and Auth.
+ * an authorization secret. Access is enforced by Firebase Security Rules and Auth.
  */
+const KNOWN_CONFIG = {
+  apiKey: "AIzaSyCd20LOQTNcqOWLAQn6Z42aWat3l9zsQ0g",
+  authDomain: "smart-water-tank-monitor-c38c0.firebaseapp.com",
+  databaseURL: "https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com",
+  projectId: "smart-water-tank-monitor-c38c0",
+  appId: "1:792718502432:web:7859d2308094c480e56a45"
+};
+
+function isValidValue(val) {
+  if (!val || typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  if (trimmed === '' || trimmed.startsWith('YOUR_') || trimmed.includes('your-project-id')) {
+    return false;
+  }
+  return true;
+}
+
 function getFirebaseConfig() {
   const env = (typeof import.meta !== 'undefined' && import.meta.env) 
     ? import.meta.env 
     : (typeof process !== 'undefined' && process.env ? process.env : {});
 
-  // Standard project fallback configuration
-  const DEFAULT_CONFIG = {
-    apiKey: "AIzaSyCd20LOQTNcqOWLAQn6Z42aWat3l9zsQ0g",
-    authDomain: "smart-water-tank-monitor-c38c0.firebaseapp.com",
-    databaseURL: "https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com",
-    projectId: "smart-water-tank-monitor-c38c0",
-    appId: "1:792718502432:web:7859d2308094c480e56a45"
+  const apiKey = isValidValue(env.VITE_FIREBASE_API_KEY) ? env.VITE_FIREBASE_API_KEY : KNOWN_CONFIG.apiKey;
+  const authDomain = isValidValue(env.VITE_FIREBASE_AUTH_DOMAIN) ? env.VITE_FIREBASE_AUTH_DOMAIN : KNOWN_CONFIG.authDomain;
+  const databaseURL = isValidValue(env.VITE_FIREBASE_DATABASE_URL) ? env.VITE_FIREBASE_DATABASE_URL : KNOWN_CONFIG.databaseURL;
+  const projectId = isValidValue(env.VITE_FIREBASE_PROJECT_ID) ? env.VITE_FIREBASE_PROJECT_ID : KNOWN_CONFIG.projectId;
+  const appId = isValidValue(env.VITE_FIREBASE_APP_ID) ? env.VITE_FIREBASE_APP_ID : KNOWN_CONFIG.appId;
+
+  return {
+    apiKey,
+    authDomain,
+    databaseURL,
+    projectId,
+    appId
   };
-
-  const config = {
-    apiKey: env.VITE_FIREBASE_API_KEY || DEFAULT_CONFIG.apiKey,
-    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_CONFIG.authDomain,
-    databaseURL: env.VITE_FIREBASE_DATABASE_URL || DEFAULT_CONFIG.databaseURL,
-    projectId: env.VITE_FIREBASE_PROJECT_ID || DEFAULT_CONFIG.projectId,
-    appId: env.VITE_FIREBASE_APP_ID || DEFAULT_CONFIG.appId
-  };
-
-  const missingKeys = Object.entries(config)
-    .filter(([_, value]) => !value || typeof value !== 'string' || value.trim() === '')
-    .map(([key]) => `VITE_FIREBASE_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`);
-
-  if (missingKeys.length > 0) {
-    const errorMsg = `[Firebase Config] Missing required environment variable(s): ${missingKeys.join(', ')}. Ensure dashboard/.env.local is configured.`;
-    console.error(errorMsg);
-    return { config: null, error: errorMsg };
-  }
-
-  return { config, error: null };
 }
 
-const { config: validatedConfig, error: configError } = getFirebaseConfig();
+const validatedConfig = getFirebaseConfig();
 
 let app = null;
 let auth = null;
 let db = null;
 let isConfigured = false;
+let configError = null;
 
-if (validatedConfig) {
+try {
+  app = getApps().length === 0 ? initializeApp(validatedConfig) : getApp();
+  auth = getAuth(app);
   try {
-    app = getApps().length === 0 ? initializeApp(validatedConfig) : getApp();
-    auth = getAuth(app);
-    // Explicitly configure local persistence for browser sessions
-    setPersistence(auth, browserLocalPersistence).catch((err) => {
-      console.warn('[Firebase Auth] Could not set local persistence:', err.message);
+    setPersistence(auth, browserLocalPersistence).catch((pErr) => {
+      console.warn('[Firebase Auth] Persistence note:', pErr.message);
     });
+  } catch (pErr) {
+    console.warn('[Firebase Auth] Persistence setup skipped:', pErr);
+  }
+  try {
+    db = getDatabase(app, validatedConfig.databaseURL);
+  } catch (dErr) {
     db = getDatabase(app);
+  }
+  isConfigured = true;
+  console.log('[Firebase] Successfully initialized Firebase modular SDK.');
+} catch (err) {
+  console.error('[Firebase] Primary initialization failed, attempting fallback recovery:', err);
+  try {
+    app = initializeApp(KNOWN_CONFIG, 'emergency-app');
+    auth = getAuth(app);
+    db = getDatabase(app, KNOWN_CONFIG.databaseURL);
     isConfigured = true;
-    console.log('[Firebase] Successfully initialized Firebase modular SDK.');
-  } catch (err) {
-    console.error('[Firebase] Initialization failure:', err.message);
+    configError = null;
+    console.log('[Firebase] Successfully recovered using emergency fallback config.');
+  } catch (fallbackErr) {
+    console.error('[Firebase] Critical initialization failure:', fallbackErr);
+    isConfigured = false;
+    configError = fallbackErr.message || String(fallbackErr);
   }
 }
 
