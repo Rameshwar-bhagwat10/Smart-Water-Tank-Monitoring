@@ -12,12 +12,21 @@ function getFirebaseConfig() {
     ? import.meta.env 
     : (typeof process !== 'undefined' && process.env ? process.env : {});
 
+  // Standard project fallback configuration
+  const DEFAULT_CONFIG = {
+    apiKey: "AIzaSyCd20LOQTNcqOWLAQn6Z42aWat3l9zsQ0g",
+    authDomain: "smart-water-tank-monitor-c38c0.firebaseapp.com",
+    databaseURL: "https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com",
+    projectId: "smart-water-tank-monitor-c38c0",
+    appId: "1:792718502432:web:7859d2308094c480e56a45"
+  };
+
   const config = {
-    apiKey: env.VITE_FIREBASE_API_KEY,
-    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-    databaseURL: env.VITE_FIREBASE_DATABASE_URL,
-    projectId: env.VITE_FIREBASE_PROJECT_ID,
-    appId: env.VITE_FIREBASE_APP_ID
+    apiKey: env.VITE_FIREBASE_API_KEY || DEFAULT_CONFIG.apiKey,
+    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_CONFIG.authDomain,
+    databaseURL: env.VITE_FIREBASE_DATABASE_URL || DEFAULT_CONFIG.databaseURL,
+    projectId: env.VITE_FIREBASE_PROJECT_ID || DEFAULT_CONFIG.projectId,
+    appId: env.VITE_FIREBASE_APP_ID || DEFAULT_CONFIG.appId
   };
 
   const missingKeys = Object.entries(config)

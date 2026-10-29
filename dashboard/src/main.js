@@ -1,5 +1,6 @@
 import { loginWithEmail, logout, onAuthChange } from './firebase/auth.js';
 import { listenToTelemetry, sendCommand, ensureUserAndTankData } from './firebase/database.js';
+import { isConfigured, configError } from './firebase/config.js';
 
 // ============================================================================
 // Smart Water Tank — Cloud Dashboard
@@ -19,6 +20,26 @@ const lH = [], fH = [], cH = [];
 let pC = 0, cS = 0, cN = 0, lastPump = '', lastState = '';
 const evts = [];
 
+// Handle unconfigured Firebase setup immediately
+if (!isConfigured) {
+  const app = document.getElementById('app');
+  if (app) {
+    app.innerHTML = `
+    <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #090B10; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif; gap: 16px; padding: 24px; text-align: center;">
+      <div style="width: 58px; height: 58px; border-radius: 18px; background: rgba(255, 71, 87, 0.12); border: 1.5px solid rgba(255, 71, 87, 0.4); display: flex; align-items: center; justify-content: center;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FF4757" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <h2 style="font-size: 20px; font-weight: 800; margin: 0;">Configuration Required</h2>
+      <p style="font-size: 13px; color: #8A92A6; max-width: 380px; margin: 0;">${configError || 'Firebase configuration could not be loaded.'}</p>
+      <button onclick="window.location.reload()" style="background: #D4F63D; color: #090B10; border: none; padding: 10px 20px; border-radius: 9999px; font-weight: 700; cursor: pointer; margin-top: 8px;">Retry Connection</button>
+    </div>`;
+  }
+}
+
 // ============================================================================
 // AUTH STATE LISTENER — Only triggers for users present in Firebase Authentication
 // Automatically creates missing user fields & tank data matching initial JSON
@@ -26,6 +47,8 @@ const evts = [];
 onAuthChange(async (user) => {
   currentUser = user;
   if (user) {
+    const loaderP = document.querySelector('#initial-loader p');
+    if (loaderP) loaderP.textContent = 'Synchronizing user profile & fleet tank...';
     try {
       // Auto-provisions user profile (/users/${uid}) and allocates separate tank (/tanks/${tankId})
       const result = await ensureUserAndTankData(user.uid, user.email);
