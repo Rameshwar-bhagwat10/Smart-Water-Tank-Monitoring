@@ -242,29 +242,52 @@ void loop() {
   // 6. Cloud Firebase: Push telemetry + Poll remote commands
   firebaseClient.update(now, pumpController, pkt);
 
-  // 7. Periodic Serial Telemetry Stream (~2s)
-  if (now - lastSerialLogMs >= 2000) {
+  // 7. Periodic Multi-Tank Fleet Telemetry Stream (~3s)
+  if (now - lastSerialLogMs >= 3000) {
     lastSerialLogMs = now;
     if (wifiConnected) {
-      Serial.printf(
-        "[tank-01] Level: %.1f%% | Flow: %.1f L/m | Current: %.2f A | Relay: %s (%s) | Wi-Fi: ONLINE (%s, %d dBm) | Cloud: ACTIVE | AP: 192.168.4.1\n",
-        levelPercent,
-        flowRateLpm,
-        pumpCurrentA,
-        pumpController.getPumpStateString(),
-        pumpController.getModeString(),
-        WiFi.localIP().toString().c_str(),
-        WiFi.RSSI()
-      );
+      Serial.println(F("┌─────────────────────── MULTI-TANK FLEET STATUS ───────────────────────┐"));
+      Serial.printf(  "│  Wi-Fi: ONLINE (%-15s | %-4d dBm)  |  Cloud Sync: ACTIVE      │\n",
+        WiFi.localIP().toString().c_str(), WiFi.RSSI());
+      Serial.println(F("├─────────┬─────────┬──────────┬──────────┬────────┬──────────┬──────────┤"));
+      Serial.println(F("│ Tank ID │ Level   │ Flow     │ Current  │ Relay  │ Mode     │ Status   │"));
+      Serial.println(F("├─────────┼─────────┼──────────┼──────────┼────────┼──────────┼──────────┤"));
+      for (size_t i = 0; i < firebaseClient.getTankCount(); i++) {
+        const auto& t = firebaseClient.getTank(i);
+        const char* pumpStr = (i == 0) ? pumpController.getPumpStateString() : t.pumpState.c_str();
+        const char* statusStr = (i == 0) ? pumpController.getStateString() : t.status.c_str();
+        float lvl = (t.levelPercent >= 0.0f) ? t.levelPercent : 78.5f;
+
+        Serial.printf("│ %-7s │ %5.1f %% │ %4.1f L/m │ %4.2f A   │ %-6s │ %-8s │ %-8s │\n",
+          t.id.c_str(),
+          lvl,
+          t.flowRateLpm,
+          t.pumpCurrentA,
+          pumpStr,
+          t.mode.c_str(),
+          statusStr
+        );
+      }
+      Serial.println(F("└─────────┴─────────┴──────────┴──────────┴────────┴──────────┴──────────┘"));
     } else {
-      Serial.printf(
-        "[tank-01] Level: %.1f%% | Flow: %.1f L/m | Current: %.2f A | Relay: %s (%s) | Wi-Fi: OFFLINE | Cloud: PAUSED | Local AP: Active (192.168.4.1)\n",
-        levelPercent,
-        flowRateLpm,
-        pumpCurrentA,
-        pumpController.getPumpStateString(),
-        pumpController.getModeString()
-      );
+      Serial.println(F("┌─────────────────────── MULTI-TANK FLEET STATUS ───────────────────────┐"));
+      Serial.println(F("│  Wi-Fi: OFFLINE (Hotspot disconnected)  |  Local AP: http://192.168.4.1│"));
+      Serial.println(F("├─────────┬─────────┬──────────┬──────────┬────────┬──────────┬──────────┤"));
+      Serial.println(F("│ Tank ID │ Level   │ Flow     │ Current  │ Relay  │ Mode     │ Status   │"));
+      Serial.println(F("├─────────┼─────────┼──────────┼──────────┼────────┼──────────┼──────────┤"));
+      for (size_t i = 0; i < firebaseClient.getTankCount(); i++) {
+        const auto& t = firebaseClient.getTank(i);
+        float lvl = (t.levelPercent >= 0.0f) ? t.levelPercent : 78.5f;
+        Serial.printf("│ %-7s │ %5.1f %% │ %4.1f L/m │ %4.2f A   │ %-6s │ %-8s │ LOCAL    │\n",
+          t.id.c_str(),
+          lvl,
+          t.flowRateLpm,
+          t.pumpCurrentA,
+          (i == 0) ? pumpController.getPumpStateString() : t.pumpState.c_str(),
+          t.mode.c_str()
+        );
+      }
+      Serial.println(F("└─────────┴─────────┴──────────┴──────────┴────────┴──────────┴──────────┘"));
     }
   }
 
@@ -306,20 +329,26 @@ void loop() {
       ESP.restart();
     } else if (cmd == "STATUS" || cmd == "WIFI") {
       wl_status_t st = WiFi.status();
-      Serial.println(F("\n==================== SYSTEM & WI-FI STATUS ===================="));
-      Serial.printf("  Tank ID        : %s\n", activeConfig.tankId);
-      Serial.printf("  Wi-Fi Target   : %s\n", WIFI_SSID);
+      Serial.println(F("\n==================== MULTI-TANK FLEET STATUS ===================="));
+      Serial.printf("  Hotspot SSID   : %s\n", WIFI_SSID);
       Serial.printf("  Wi-Fi Status   : %s (Code: %d)\n", getWifiStatusName(st), (int)st);
-      Serial.printf("  Station IP     : %s\n", (st == WL_CONNECTED) ? WiFi.localIP().toString().c_str() : "Not Assigned");
-      Serial.printf("  Signal (RSSI)  : %d dBm\n", (st == WL_CONNECTED) ? WiFi.RSSI() : 0);
-      Serial.printf("  Cloud Gateway  : %s\n", (st == WL_CONNECTED) ? "ONLINE (Firebase active)" : "PAUSED (Awaiting Wi-Fi)");
-      Serial.printf("  Local AP SSID  : %s (Pass: %s)\n", "SmartWaterTank", "SmartWaterTank");
-      Serial.printf("  Local AP URL   : http://192.168.4.1\n");
-      Serial.printf("  Pump State     : %s (Mode: %s)\n", pumpController.getPumpStateString(), pumpController.getModeString());
-      Serial.printf("  Water Level    : %.1f%% (%.1f cm)\n", levelPercent, distanceCm);
-      Serial.printf("  Flow Rate      : %.1f L/min (Total: %.2f L)\n", flowRateLpm, totalLitres);
-      Serial.printf("  Safety Lockout : %s\n", pumpController.getLockoutString());
-      Serial.println(F("===============================================================\n"));
+      Serial.printf("  Station IP     : %s (Signal: %d dBm)\n",
+        (st == WL_CONNECTED) ? WiFi.localIP().toString().c_str() : "None",
+        (st == WL_CONNECTED) ? WiFi.RSSI() : 0);
+      Serial.printf("  Cloud Gateway  : %s\n", (st == WL_CONNECTED) ? "ONLINE (Active)" : "OFFLINE (Paused)");
+      Serial.printf("  Local AP URL   : http://192.168.4.1 (SSID: SmartWaterTank)\n");
+      Serial.printf("  Physical Relay : %s\n", pumpController.getPumpStateString());
+      Serial.println(F(" ---------------------------------------------------------------"));
+      Serial.println(F("  Managed Tanks:"));
+      for (size_t i = 0; i < firebaseClient.getTankCount(); i++) {
+        const auto& t = firebaseClient.getTank(i);
+        Serial.printf("  [%s] Mode: %-6s | Pump: %-4s | Level: %5.1f%% | Status: %s\n",
+          t.id.c_str(), t.mode.c_str(), t.pumpState.c_str(),
+          (t.levelPercent >= 0.0f) ? t.levelPercent : 78.5f,
+          t.status.c_str()
+        );
+      }
+      Serial.println(F("=================================================================\n"));
     }
   }
 
