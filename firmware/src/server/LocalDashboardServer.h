@@ -15,6 +15,8 @@ public:
 
   void begin(const char* tankId = "tank-01");
   void handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry);
+  bool hasRecentClient() const { return (_lastClientAccessMs > 0 && (millis() - _lastClientAccessMs < 8000)); }
+  uint32_t getLastClientAccessMs() const { return _lastClientAccessMs; }
   void stop();
 
 private:
@@ -22,6 +24,7 @@ private:
   DNSServer _dnsServer;
   bool _isRunning;
   String _tankId;
+  uint32_t _lastClientAccessMs;
   const TelemetryPacket* _lastTelemetry;
   PumpController* _pumpCtrl;
 

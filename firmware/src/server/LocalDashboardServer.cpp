@@ -566,6 +566,7 @@ LocalDashboardServer::LocalDashboardServer(uint16_t port)
   : _server(port),
     _isRunning(false),
     _tankId("tank-01"),
+    _lastClientAccessMs(0),
     _lastTelemetry(nullptr),
     _pumpCtrl(nullptr) {}
 
@@ -635,6 +636,7 @@ void LocalDashboardServer::setupRoutes() {
 }
 
 void LocalDashboardServer::handleRoot() {
+  _lastClientAccessMs = millis();
   handleCors();
   _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   _server.send_P(200, "text/html; charset=UTF-8", DASHBOARD_HTML);
@@ -652,6 +654,7 @@ void LocalDashboardServer::handleNotFound() {
 }
 
 void LocalDashboardServer::handleApiLive() {
+  _lastClientAccessMs = millis();
   handleCors();
 
   // ===== DYNAMIC REALISTIC DUMMY DATA FOR DEMO & TESTING =====
@@ -696,6 +699,7 @@ void LocalDashboardServer::handleApiLive() {
 }
 
 void LocalDashboardServer::handleApiCommand() {
+  _lastClientAccessMs = millis();
   handleCors();
   if (!_pumpCtrl) {
     _server.send(503, "application/json", "{\"success\":false,\"reason\":\"Controller not ready\"}");
@@ -719,6 +723,13 @@ void LocalDashboardServer::handleApiCommand() {
     bool turnOn = (pump == "ON" || pump == "1");
     CommandResult res = _pumpCtrl->requestManualPump(turnOn, millis());
     if (!res.accepted) {
+      Serial.println();
+      Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
+      Serial.printf(  "║   ⚠️ LOCAL COMMAND BLOCKED BY SAFETY LOCKOUT: [%-10s]              ║\n", _tankId.c_str());
+      Serial.printf(  "║   Reason         : %-49s ║\n", res.reason ? res.reason : "Safety lockout");
+      Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
+      Serial.println();
+
       char out[128];
       snprintf(out, sizeof(out), "{\"success\":false,\"reason\":\"%s\",\"pump\":\"%s\",\"mode\":\"%s\"}",
         res.reason ? res.reason : "Safety lockout",
@@ -729,6 +740,23 @@ void LocalDashboardServer::handleApiCommand() {
       return;
     }
   }
+
+  // Log successful command to Serial Monitor
+  Serial.println();
+  Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
+  Serial.printf(  "║   📱 LOCAL DASHBOARD COMMAND RECEIVED: [%-10s]                   ║\n", _tankId.c_str());
+  if (mode.length() > 0) {
+    Serial.printf("║   Requested Mode : %-49s ║\n", mode.c_str());
+  }
+  if (pump.length() > 0) {
+    Serial.printf("║   Requested Relay: %-49s ║\n", pump.c_str());
+  }
+  Serial.println(F("║   Source         : Direct SoftAP (http://192.168.4.1)                ║"));
+  Serial.printf(  "║   Relay Output   : %-49s ║\n", _pumpCtrl->getPumpStateString());
+  Serial.printf(  "║   Control Mode   : %-49s ║\n", _pumpCtrl->getModeString());
+  Serial.println(F("║   Status         : EXECUTED & APPLIED TO LOCAL TANK                  ║"));
+  Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
+  Serial.println();
 
   char out[128];
   snprintf(out, sizeof(out), "{\"success\":true,\"pump\":\"%s\",\"mode\":\"%s\"}",

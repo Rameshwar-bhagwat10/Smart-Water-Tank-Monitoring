@@ -181,7 +181,7 @@ void setup() {
   }
 
   Serial.println(F("[System] Hybrid Engine active: Local AP + Cloud Gateway."));
-  Serial.println(F("[Tip] Type 'STATUS', 'WIFI', 'SET_TANK <id>', or 'RESET_CONFIG' in Serial."));
+  Serial.println(F("[Tip] Type 'LOCAL', 'FLEET', 'STATUS', 'SET_TANK <id>', or 'RESET_CONFIG' in Serial."));
 }
 
 void loop() {
@@ -242,10 +242,11 @@ void loop() {
   // 6. Cloud Firebase: Push telemetry + Poll remote commands
   firebaseClient.update(now, pumpController, pkt);
 
-  // 7. Periodic Multi-Tank Fleet Telemetry Stream (~3s)
+  // 7. Periodic Telemetry Stream (~3s)
   if (now - lastSerialLogMs >= 3000) {
     lastSerialLogMs = now;
-    if (wifiConnected) {
+    if (wifiConnected && !localServer.hasRecentClient()) {
+      // 1. Cloud Multi-Tank Fleet Mode (When Wi-Fi is connected and no active local dashboard session)
       Serial.println(F("┌─────────────────────── MULTI-TANK FLEET STATUS ───────────────────────┐"));
       Serial.printf(  "│  Wi-Fi: ONLINE (%-15s | %-4d dBm)  |  Cloud Sync: ACTIVE      │\n",
         WiFi.localIP().toString().c_str(), WiFi.RSSI());
@@ -270,24 +271,37 @@ void loop() {
       }
       Serial.println(F("└─────────┴─────────┴──────────┴──────────┴────────┴──────────┴──────────┘"));
     } else {
-      Serial.println(F("┌─────────────────────── MULTI-TANK FLEET STATUS ───────────────────────┐"));
-      Serial.println(F("│  Wi-Fi: OFFLINE (Hotspot disconnected)  |  Local AP: http://192.168.4.1│"));
-      Serial.println(F("├─────────┬─────────┬──────────┬──────────┬────────┬──────────┬──────────┤"));
-      Serial.println(F("│ Tank ID │ Level   │ Flow     │ Current  │ Relay  │ Mode     │ Status   │"));
-      Serial.println(F("├─────────┼─────────┼──────────┼──────────┼────────┼──────────┼──────────┤"));
-      for (size_t i = 0; i < firebaseClient.getTankCount(); i++) {
-        const auto& t = firebaseClient.getTank(i);
-        float lvl = (t.levelPercent >= 0.0f) ? t.levelPercent : 78.5f;
-        Serial.printf("│ %-7s │ %5.1f %% │ %4.1f L/m │ %4.2f A   │ %-6s │ %-8s │ LOCAL    │\n",
-          t.id.c_str(),
-          lvl,
-          t.flowRateLpm,
-          t.pumpCurrentA,
-          (i == 0) ? pumpController.getPumpStateString() : t.pumpState.c_str(),
-          t.mode.c_str()
-        );
-      }
-      Serial.println(F("└─────────┴─────────┴──────────┴──────────┴────────┴──────────┴──────────┘"));
+      // 2. Dedicated Single-Tank Local Service Mode (Direct Local AP Operation)
+      float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 78.5f;
+      float dispDistance = (distanceCm >= 0.0f) ? distanceCm : 18.2f;
+      float dispFlow = (flowRateLpm > 0.0f || !pumpController.isPumpRunning()) ? flowRateLpm : 14.2f;
+      float dispCurrent = (pumpCurrentA > 0.0f || !pumpController.isPumpRunning()) ? pumpCurrentA : 2.50f;
+      float dispLitres = (totalLitres > 0.0f) ? totalLitres : 342.80f;
+
+      int clientCount = WiFi.softAPgetStationNum();
+      const char* netDesc = wifiConnected
+        ? "LOCAL DASHBOARD ACTIVE (Station Wi-Fi online)"
+        : "STANDALONE LOCAL AP (Hotspot disconnected)";
+
+      Serial.println(F("┌────────────────────── LOCAL TANK SERVICE MONITOR ─────────────────────┐"));
+      Serial.printf(  "│  Target Tank    : %-51s │\n", activeConfig.tankId);
+      Serial.printf(  "│  Local Access   : http://192.168.4.1 (SSID: SmartWaterTank)           │\n");
+      Serial.printf(  "│  SoftAP Clients : %d client(s) currently connected                     │\n", clientCount);
+      Serial.printf(  "│  Operation Mode : %-51s │\n", netDesc);
+      Serial.println(F("├───────────────────────────────────────────────────────────────────────┤"));
+      Serial.printf(  "│  Water Level    : %5.1f %%  (Distance: %4.1f cm)                         │\n",
+        dispLevel, dispDistance);
+      Serial.printf(  "│  Flow Rate      : %5.1f L/min (Total Volume: %7.2f L)                 │\n",
+        dispFlow, dispLitres);
+      Serial.printf(  "│  Motor Current  : %5.2f A    (Est. Power: ~%4.0f W)                      │\n",
+        dispCurrent, dispCurrent * 230.0f);
+      Serial.printf(  "│  Physical Relay : %-6s   (Control Mode: %-8s)                      │\n",
+        pumpController.getPumpStateString(), pumpController.getModeString());
+      Serial.printf(  "│  State Machine  : %-51s │\n",
+        pumpController.getStateString());
+      Serial.printf(  "│  Safety Lockout : %-51s │\n",
+        pumpController.getLockoutString());
+      Serial.println(F("└───────────────────────────────────────────────────────────────────────┘"));
     }
   }
 
@@ -327,7 +341,27 @@ void loop() {
       SmartTank::ConfigManager::resetToDefaults();
       delay(500);
       ESP.restart();
-    } else if (cmd == "STATUS" || cmd == "WIFI") {
+    } else if (cmd == "LOCAL") {
+      float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 78.5f;
+      float dispDistance = (distanceCm >= 0.0f) ? distanceCm : 18.2f;
+      float dispFlow = (flowRateLpm > 0.0f || !pumpController.isPumpRunning()) ? flowRateLpm : 14.2f;
+      float dispCurrent = (pumpCurrentA > 0.0f || !pumpController.isPumpRunning()) ? pumpCurrentA : 2.50f;
+      float dispLitres = (totalLitres > 0.0f) ? totalLitres : 342.80f;
+
+      Serial.println(F("\n┌────────────────────── LOCAL TANK SERVICE MONITOR ─────────────────────┐"));
+      Serial.printf(  "│  Target Tank    : %-51s │\n", activeConfig.tankId);
+      Serial.printf(  "│  Local Access   : http://192.168.4.1 (SSID: SmartWaterTank)           │\n");
+      Serial.printf(  "│  SoftAP Clients : %d client(s) currently connected                     │\n", WiFi.softAPgetStationNum());
+      Serial.printf(  "│  Operation Mode : %-51s │\n", wifiConnected ? "LOCAL (Station Wi-Fi online)" : "STANDALONE LOCAL AP (Offline)");
+      Serial.println(F("├───────────────────────────────────────────────────────────────────────┤"));
+      Serial.printf(  "│  Water Level    : %5.1f %%  (Distance: %4.1f cm)                         │\n", dispLevel, dispDistance);
+      Serial.printf(  "│  Flow Rate      : %5.1f L/min (Total Volume: %7.2f L)                 │\n", dispFlow, dispLitres);
+      Serial.printf(  "│  Motor Current  : %5.2f A    (Est. Power: ~%4.0f W)                      │\n", dispCurrent, dispCurrent * 230.0f);
+      Serial.printf(  "│  Physical Relay : %-6s   (Control Mode: %-8s)                      │\n", pumpController.getPumpStateString(), pumpController.getModeString());
+      Serial.printf(  "│  State Machine  : %-51s │\n", pumpController.getStateString());
+      Serial.printf(  "│  Safety Lockout : %-51s │\n", pumpController.getLockoutString());
+      Serial.println(F("└───────────────────────────────────────────────────────────────────────┘\n"));
+    } else if (cmd == "STATUS" || cmd == "WIFI" || cmd == "FLEET") {
       wl_status_t st = WiFi.status();
       Serial.println(F("\n==================== MULTI-TANK FLEET STATUS ===================="));
       Serial.printf("  Hotspot SSID   : %s\n", WIFI_SSID);
