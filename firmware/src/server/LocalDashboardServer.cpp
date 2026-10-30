@@ -1,4 +1,5 @@
 #include "LocalDashboardServer.h"
+#include "LocalDashboardGzip.h"
 
 namespace SmartTank {
 
@@ -12,6 +13,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Smart Water Tank</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z' fill='%23D4F63D'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #090B10;
@@ -279,18 +281,20 @@ const evts=[
   {msg:'Local dashboard connected',color:'#D4F63D',ts:'19:28:15'}
 ];
 
-// -- Canvas setup helpers --
+// -- Canvas setup helpers with instant width fallback --
 function dpr(){return window.devicePixelRatio||1;}
 function initC(id,h){
   const c=document.getElementById(id);
   if(!c)return null;
   const r=dpr();
-  c.width=c.parentElement.clientWidth*r;
+  let pw=c.parentElement?c.parentElement.clientWidth:0;
+  if(!pw||pw<40){pw=Math.min(window.innerWidth-32,440);}
+  c.width=pw*r;
   c.height=h*r;
   c.style.height=h+'px';
   const x=c.getContext('2d');
   x.scale(r,r);
-  return{c,x,w:c.parentElement.clientWidth,h};
+  return{c,x,w:pw,h};
 }
 
 // -- Draw Level Chart (Monex Neon Area + Line) --
@@ -554,8 +558,10 @@ async function sP(s){
   finally{iS=false;}
 }
 
-// Init
-drawLevel();drawFlow();drawGauge(2.65);renderTL();
+// Instant 0ms Paint & Polling Loop
+function renderAll(){drawLevel();drawFlow();drawGauge(2.65);renderTL();}
+window.addEventListener('resize',renderAll);
+requestAnimationFrame(renderAll);
 addEvt('Local dashboard connected','#D4F63D');
 poll();setInterval(poll,600);
 </script>
@@ -609,20 +615,28 @@ void LocalDashboardServer::handleCors() {
 }
 
 void LocalDashboardServer::setupRoutes() {
+  _server.collectHeaders("Accept-Encoding", "User-Agent");
+
   _server.on("/", HTTP_GET, [this]() { handleRoot(); });
 
-  // Android Captive Portal Detection
-  _server.on("/generate_204", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/gen_204", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/connecttest.txt", HTTP_GET, [this]() { handleRoot(); });
+  // Android Connectivity Detection — Instant 204 prevents captive hijack & connection stall
+  _server.on("/generate_204", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/gen_204", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/connecttest.txt", HTTP_GET, [this]() { _server.send(204); });
 
-  // Apple Captive Portal Detection (iOS / macOS / Safari)
+  // Apple Captive Portal Detection (iOS / Safari)
   _server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleRoot(); });
   _server.on("/canonical.html", HTTP_GET, [this]() { handleRoot(); });
 
-  // Windows Captive Portal Detection
-  _server.on("/ncsi.txt", HTTP_GET, [this]() { handleRoot(); });
+  // Windows NCSI
+  _server.on("/ncsi.txt", HTTP_GET, [this]() { _server.send(200, "text/plain", "Microsoft NCSI"); });
   _server.on("/redirect", HTTP_GET, [this]() { handleRoot(); });
+
+  // Eliminate Mobile Browser 404 Storms (Favicon, Apple touch icons, Robots)
+  _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/apple-touch-icon.png", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/apple-touch-icon-precomposed.png", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/robots.txt", HTTP_GET, [this]() { _server.send(204); });
 
   // High-Speed REST API
   _server.on("/api/live", HTTP_GET, [this]() { handleApiLive(); });
@@ -638,8 +652,16 @@ void LocalDashboardServer::setupRoutes() {
 void LocalDashboardServer::handleRoot() {
   _lastClientAccessMs = millis();
   handleCors();
-  _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  _server.send_P(200, "text/html; charset=UTF-8", DASHBOARD_HTML);
+
+  // Send pre-compressed GZIP payload for ultra-fast load (<50ms on mobile)
+  if (_server.hasHeader("Accept-Encoding") && _server.header("Accept-Encoding").indexOf("gzip") != -1) {
+    _server.sendHeader("Content-Encoding", "gzip");
+    _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    _server.send_P(200, "text/html; charset=UTF-8", (const char*)DASHBOARD_HTML_GZ, DASHBOARD_HTML_GZ_LEN);
+  } else {
+    _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    _server.send_P(200, "text/html; charset=UTF-8", DASHBOARD_HTML);
+  }
 }
 
 void LocalDashboardServer::handleNotFound() {
@@ -648,7 +670,16 @@ void LocalDashboardServer::handleNotFound() {
     _server.send(204);
     return;
   }
-  // Redirect unknown captive portal queries directly to root
+
+  String host = _server.hostHeader();
+  // If the request was made directly to 192.168.4.1, do NOT redirect back to root!
+  // This prevents recursive redirect loops that choke the ESP8266 web server.
+  if (host.startsWith("192.168.4.1")) {
+    _server.send(404, "text/plain", "Not Found");
+    return;
+  }
+
+  // Redirect foreign domain captive portal queries to root
   _server.sendHeader("Location", "http://192.168.4.1/", true);
   _server.send(302, "text/plain", "");
 }

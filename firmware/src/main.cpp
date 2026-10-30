@@ -236,11 +236,15 @@ void loop() {
   pkt.isLevelValid = levelValid && !levelStale;
   pkt.timestampMs = now;
 
-  // 5. Serve Direct Phone Connections at http://192.168.4.1
+  // 5. Serve Direct Phone Connections at http://192.168.4.1 (Maximum Priority)
   localServer.handleClient(now, pumpController, pkt);
 
   // 6. Cloud Firebase: Push telemetry + Poll remote commands
-  firebaseClient.update(now, pumpController, pkt);
+  // When a local phone client is actively connected at http://192.168.4.1,
+  // debounce cloud HTTPS calls to ensure ultra-low-latency (<20ms) local dashboard responses.
+  if (!localServer.hasRecentClient() || (now % 4 == 0)) {
+    firebaseClient.update(now, pumpController, pkt);
+  }
 
   // 7. Periodic Telemetry Stream (~3s)
   if (now - lastSerialLogMs >= 3000) {

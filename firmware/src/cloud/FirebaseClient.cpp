@@ -499,8 +499,8 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
     return;
   }
 
-  // Periodic Fleet Auto-Discovery scan (every 5s)
-  if (currentMillis - _lastFleetScanMs >= 5000) {
+  // Periodic Fleet Auto-Discovery scan (every 60s to avoid blocking local web server)
+  if (currentMillis - _lastFleetScanMs >= 60000) {
     _lastFleetScanMs = currentMillis;
     scanFleetForNewTanks();
   }
