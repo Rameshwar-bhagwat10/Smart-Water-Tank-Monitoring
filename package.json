@@ -1,0 +1,10 @@
+{
+  "name": "smart-water-tank-monitoring-root",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "npm --prefix dashboard run build",
+    "preview": "npm --prefix dashboard run preview",
+    "test": "npm --prefix dashboard test"
+  }
+}

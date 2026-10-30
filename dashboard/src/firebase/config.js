@@ -1,4 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import 'firebase/auth';
+import 'firebase/database';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
