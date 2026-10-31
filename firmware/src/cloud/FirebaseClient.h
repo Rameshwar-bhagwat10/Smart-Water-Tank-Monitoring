@@ -90,6 +90,10 @@ private:
   void maintainWifi(uint32_t currentMillis);
   void scanFleetForNewTanks();
   bool isTimeSynchronized() const;
+  void initSecureClient();
+
+  WiFiClientSecure _secureClient;
+  bool _secureClientConfigured;
 };
 
 } // namespace SmartTank

@@ -13,6 +13,10 @@ let userRole = 'operator';
 let currentUser = null;
 let unsubTelemetry = null;
 let currentMode = 'AUTO';
+let optimisticPump = null;
+let optimisticPumpExpires = 0;
+let optimisticMode = null;
+let optimisticModeExpires = 0;
 
 // -- Data history buffers (rolling 60 points) --
 const MX = 60;
@@ -387,6 +391,8 @@ window._sM = async (mode) => {
   const ak = document.getElementById('ak');
   if (ak) ak.textContent = 'Setting ' + mode + '...';
   // Instant optimistic feedback (<1ms)
+  optimisticMode = mode;
+  optimisticModeExpires = Date.now() + 2500;
   currentMode = mode;
   uMB(mode, lastPump);
   try {
@@ -405,6 +411,8 @@ window._sP = async (state) => {
   if (ak) ak.textContent = 'Pump ' + state + '...';
 
   // Instant optimistic feedback (<1ms)
+  optimisticPump = state;
+  optimisticPumpExpires = Date.now() + 2500;
   currentMode = 'MANUAL';
   lastPump = state;
   uMB('MANUAL', state);
@@ -433,8 +441,31 @@ function updateDashboard(d) {
   const flow = parseFloat(d.flowRateLpm ?? d.flow ?? 0);
   const total = parseFloat(d.totalLitres ?? d.total ?? 0);
   const current = parseFloat(d.pumpCurrentA ?? d.current ?? 0);
-  const pump = d.pumpState ?? d.pump ?? 'OFF';
-  const mode = d.controlMode ?? d.mode ?? 'AUTO';
+  let pump = d.pumpState ?? d.pump ?? 'OFF';
+  let mode = d.controlMode ?? d.mode ?? 'AUTO';
+
+  // Respect optimistic pump state during in-flight command window (prevents rubber-banding)
+  if (optimisticPump !== null && Date.now() < optimisticPumpExpires) {
+    if (pump === optimisticPump) {
+      optimisticPump = null; // Confirmed by hardware!
+    } else {
+      pump = optimisticPump; // Keep optimistic state until hardware confirms
+    }
+  } else {
+    optimisticPump = null;
+  }
+
+  // Respect optimistic mode state during in-flight command window
+  if (optimisticMode !== null && Date.now() < optimisticModeExpires) {
+    if (mode === optimisticMode) {
+      optimisticMode = null;
+    } else {
+      mode = optimisticMode;
+    }
+  } else {
+    optimisticMode = null;
+  }
+
   const status = d.controllerStatus ?? d.status ?? 'Standby';
   const waterProbe = d.waterProbe ?? false;
   const rawAdc = d.rawAdc ?? '--';

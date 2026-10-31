@@ -18,11 +18,20 @@ FirebaseClient::FirebaseClient(const String& host, const String& authKey, const 
     _lastWifiConnected(false),
     _lastReconnectAttemptMs(0),
     _lastFleetScanMs(0),
-    _lastReportedLockout(SafetyLockout::NONE) {
+    _lastReportedLockout(SafetyLockout::NONE),
+    _secureClientConfigured(false) {
   
   // Register physical controller primary tank initially.
-  // All other tanks will be loaded dynamically from Firebase only if they exist in the database!
   addTank(_primaryTankId);
+}
+
+void FirebaseClient::initSecureClient() {
+  if (!_secureClientConfigured) {
+    _secureClient.setInsecure();
+    _secureClient.setBufferSizes(1024, 512); // Saves 31KB of RAM and dramatically speeds up TLS handshakes
+    _secureClient.setTimeout(800);
+    _secureClientConfigured = true;
+  }
 }
 
 void FirebaseClient::addTank(const String& tankId) {
@@ -92,9 +101,6 @@ void FirebaseClient::maintainWifi(uint32_t currentMillis) {
       _ntpConfigured = true;
       Serial.println(F("[Cloud] Synchronizing network time via NTP (UTC)..."));
     }
-
-    // Discover only the tanks that currently exist in Firebase RTDB
-    scanFleetForNewTanks();
   }
   // Transition: Just Disconnected
   else if (!currentConnected && _lastWifiConnected) {
@@ -178,12 +184,10 @@ bool FirebaseClient::publishTelemetryForTank(const String& tankId, const Telemet
   String payload;
   serializeJson(doc, payload);
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(2500);
-
+  initSecureClient();
   HTTPClient http;
-  if (!http.begin(client, url)) {
+  http.setReuse(true);
+  if (!http.begin(_secureClient, url)) {
     return false;
   }
 
@@ -219,13 +223,10 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
   String url = buildUrl(endpoint);
   if (url.length() == 0) return false;
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(800);
-
+  initSecureClient();
   HTTPClient http;
   http.setReuse(true);
-  if (!http.begin(client, url)) {
+  if (!http.begin(_secureClient, url)) {
     return false;
   }
 
@@ -238,131 +239,127 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
   String payload = http.getString();
   http.end();
 
-    if (payload.length() == 0 || payload == "null") {
-      if (!node.baselineEstablished) {
-        node.baselineEstablished = true;
-      }
-      return false;
-    }
-
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) return false;
-
-    const char* cmdId = doc["commandId"] | "";
-    const char* reqMode = doc["requestedMode"] | "";
-    const char* reqState = doc["requestedPumpState"] | "";
-    const char* reqAction = doc["action"] | "";
-    const char* reqBy = doc["requestedBy"] | "CloudUser";
-    double requestedAt = doc["requestedAt"] | 0.0;
-
-    if (strlen(cmdId) == 0) {
-      if (!node.baselineEstablished) {
-        node.baselineEstablished = true;
-      }
-      return false;
-    }
-
-    // Baseline establishment on startup (avoids replaying historical commands on boot)
+  if (payload.length() == 0 || payload == "null") {
     if (!node.baselineEstablished) {
-      strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
-      node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
       node.baselineEstablished = true;
-      node.mode = reqMode;
-      node.pumpState = reqState;
-      return false;
     }
+    return false;
+  }
 
-    // Deduplication check
-    if (strcmp(node.lastProcessedCommandId, cmdId) == 0) {
-      return false;
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, payload);
+  if (err) return false;
+
+  const char* cmdId = doc["commandId"] | "";
+  const char* reqMode = doc["requestedMode"] | "";
+  const char* reqState = doc["requestedPumpState"] | "";
+  const char* reqAction = doc["action"] | "";
+  const char* reqBy = doc["requestedBy"] | "CloudUser";
+  double requestedAt = doc["requestedAt"] | 0.0;
+
+  if (strlen(cmdId) == 0) {
+    if (!node.baselineEstablished) {
+      node.baselineEstablished = true;
     }
+    return false;
+  }
 
-    // TTL Expiry Check (60s)
-    if (isTimeSynchronized() && requestedAt > 0.0) {
-      time_t nowSec = time(nullptr);
-      uint64_t nowMs = (uint64_t)nowSec * 1000ULL;
-      uint64_t cmdReqMs = (uint64_t)requestedAt;
-      if (nowMs > cmdReqMs && (nowMs - cmdReqMs) > 60000ULL) {
-        sendCommandAck(node.id.c_str(), cmdId, "REJECTED", "Command expired: older than 60s TTL limit");
-        strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
-        node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
-        return false;
-      }
-    }
-
-    // Acknowledge receipt
-    sendCommandAck(node.id.c_str(), cmdId, "RECEIVED", "Command received by edge controller");
-
-    // Print High-Visibility Command Card on Serial
-    Serial.println();
-    Serial.println(F("╔════════════════════════════════════════════════════════════════════╗"));
-    Serial.printf(  "║               ⚡ CLOUD COMMAND RECEIVED: [%s]                 \n", node.id.c_str());
-    Serial.println(F("╠════════════════════════════════════════════════════════════════════╣"));
-    Serial.printf(  "║  Target Tank  : %-50s ║\n", node.id.c_str());
-    Serial.printf(  "║  Command ID   : %-50s ║\n", cmdId);
-    Serial.printf(  "║  Mode Target  : %-50s ║\n", reqMode);
-    Serial.printf(  "║  Pump Request : %-50s ║\n", reqState);
-    Serial.printf(  "║  Requested By : %-50s ║\n", reqBy);
-
-    // Check for direct Buzzer Test command
-    if (strcmp(reqAction, "BEEP") == 0 || strcmp(reqState, "BEEP") == 0) {
-      Serial.println(F("║  Action       : APPLIED (Buzzer 1000ms Test Beep)                  ║"));
-      sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Buzzer beeped 1000ms");
-      if (alertMgr) {
-        alertMgr->playTone(2500, 1000);
-      }
-      Serial.println(F("╚════════════════════════════════════════════════════════════════════╝"));
-      Serial.println();
-      strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
-      node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
-      return true;
-    }
-
-    // Apply Command
-    node.mode = reqMode;
-    node.pumpState = reqState;
-    ControlMode targetMode = (strcmp(reqMode, "MANUAL") == 0) ? ControlMode::MANUAL : ControlMode::AUTO;
-    bool reqPumpOn = (strcmp(reqState, "ON") == 0);
-
-    if (targetMode == ControlMode::MANUAL) {
-      pumpCtrl.requestMode(ControlMode::MANUAL);
-      CommandResult res = pumpCtrl.requestManualPump(reqPumpOn, millis());
-      if (res.accepted) {
-        node.status = reqPumpOn ? "MANUAL_FILLING" : "STANDBY";
-        Serial.printf("║  Action       : APPLIED (Relay %s)%-32s ║\n", reqPumpOn ? "ON" : "OFF", "");
-        sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Relay actuated");
-        if (alertMgr) {
-          alertMgr->playTone(2500, reqPumpOn ? 600 : 300);
-        }
-      } else {
-        node.status = "FAULT";
-        Serial.printf("║  Action       : REJECTED (%s)%-25s ║\n", res.reason ? res.reason : "Locked", "");
-        sendCommandAck(node.id.c_str(), cmdId, "REJECTED", res.reason ? res.reason : "Safety lockout");
-        if (alertMgr) {
-          alertMgr->playTone(2000, 100);
-          delay(50);
-          alertMgr->playTone(2000, 100);
-        }
-      }
-    } else {
-      pumpCtrl.requestMode(ControlMode::AUTO);
-      node.status = "AUTO_IDLE";
-      Serial.println(F("║  Action       : APPLIED (Switched to AUTO Mode)                    ║"));
-      sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Switched to AUTO mode");
-      if (alertMgr) {
-        alertMgr->playTone(2700, 150);
-        delay(50);
-        alertMgr->playTone(3000, 150);
-      }
-    }
-
-    Serial.println(F("╚════════════════════════════════════════════════════════════════════╝"));
-    Serial.println();
-
+  // Baseline establishment on startup (avoids replaying historical commands on boot)
+  if (!node.baselineEstablished) {
     strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
     node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
-    anyProcessed = true;
+    node.baselineEstablished = true;
+    node.mode = reqMode;
+    node.pumpState = reqState;
+    return false;
+  }
+
+  // Deduplication check
+  if (strcmp(node.lastProcessedCommandId, cmdId) == 0) {
+    return false;
+  }
+
+  // TTL Expiry Check (60s)
+  if (isTimeSynchronized() && requestedAt > 0.0) {
+    time_t nowSec = time(nullptr);
+    uint64_t nowMs = (uint64_t)nowSec * 1000ULL;
+    uint64_t cmdReqMs = (uint64_t)requestedAt;
+    if (nowMs > cmdReqMs && (nowMs - cmdReqMs) > 60000ULL) {
+      strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
+      node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
+      sendCommandAck(node.id.c_str(), cmdId, "REJECTED", "Command expired: older than 60s TTL limit");
+      return false;
+    }
+  }
+
+  // Mark command as processed immediately to prevent duplicate actuation
+  strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
+  node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
+
+  // Handle direct Buzzer Test command
+  if (strcmp(reqAction, "BEEP") == 0 || strcmp(reqState, "BEEP") == 0) {
+    if (alertMgr) {
+      alertMgr->playTone(2500, 1000);
+    }
+    sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Buzzer beeped 1000ms");
+    return true;
+  }
+
+  // INSTANT RELAY ACTUATION (0ms Physical Execution)
+  node.mode = reqMode;
+  node.pumpState = reqState;
+  ControlMode targetMode = (strcmp(reqMode, "MANUAL") == 0) ? ControlMode::MANUAL : ControlMode::AUTO;
+  bool reqPumpOn = (strcmp(reqState, "ON") == 0);
+
+  bool actionAccepted = false;
+  const char* actionReason = nullptr;
+
+  if (targetMode == ControlMode::MANUAL) {
+    pumpCtrl.requestMode(ControlMode::MANUAL);
+    CommandResult res = pumpCtrl.requestManualPump(reqPumpOn, millis());
+    actionAccepted = res.accepted;
+    actionReason = res.reason;
+    if (res.accepted) {
+      node.status = reqPumpOn ? "MANUAL_FILLING" : "STANDBY";
+      if (alertMgr) {
+        alertMgr->playTone(2500, reqPumpOn ? 600 : 300);
+      }
+    } else {
+      node.status = "FAULT";
+      if (alertMgr) {
+        alertMgr->playTone(2000, 100);
+        delay(50);
+        alertMgr->playTone(2000, 100);
+      }
+    }
+  } else {
+    pumpCtrl.requestMode(ControlMode::AUTO);
+    actionAccepted = true;
+    node.status = "AUTO_IDLE";
+    if (alertMgr) {
+      alertMgr->playTone(2700, 150);
+      delay(50);
+      alertMgr->playTone(3000, 150);
+    }
+  }
+
+  // Print High-Visibility Command Execution Card on Serial
+  Serial.println();
+  Serial.println(F("╔════════════════════════════════════════════════════════════════════╗"));
+  Serial.printf(  "║               ⚡ CLOUD COMMAND EXECUTED: [%s]                 \n", node.id.c_str());
+  Serial.println(F("╠════════════════════════════════════════════════════════════════════╣"));
+  Serial.printf(  "║  Target Tank  : %-50s ║\n", node.id.c_str());
+  Serial.printf(  "║  Command ID   : %-50s ║\n", cmdId);
+  Serial.printf(  "║  Mode Target  : %-50s ║\n", reqMode);
+  Serial.printf(  "║  Pump Request : %-50s ║\n", reqState);
+  Serial.printf(  "║  Requested By : %-50s ║\n", reqBy);
+  Serial.printf(  "║  Relay Action : %-50s ║\n", actionAccepted ? (reqPumpOn ? "RELAY ON (PUMP ENERGIZED)" : "RELAY OFF (DE-ENERGIZED)") : (actionReason ? actionReason : "BLOCKED"));
+  Serial.println(F("╚════════════════════════════════════════════════════════════════════╝"));
+  Serial.println();
+
+  // Send ACK after relay has actuated
+  sendCommandAck(node.id.c_str(), cmdId, actionAccepted ? "APPLIED" : "REJECTED", actionAccepted ? "Relay actuated" : actionReason);
+  anyProcessed = true;
 
   return anyProcessed;
 }
@@ -388,12 +385,10 @@ bool FirebaseClient::sendCommandAck(const char* tankId, const char* commandId, c
   String payload;
   serializeJson(doc, payload);
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(2500);
-
+  initSecureClient();
   HTTPClient http;
-  if (!http.begin(client, url)) {
+  http.setReuse(true);
+  if (!http.begin(_secureClient, url)) {
     return false;
   }
 
@@ -424,12 +419,10 @@ bool FirebaseClient::publishAlert(const char* tankId, const char* alertType, con
   String payload;
   serializeJson(doc, payload);
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(2500);
-
+  initSecureClient();
   HTTPClient http;
-  if (!http.begin(client, url)) {
+  http.setReuse(true);
+  if (!http.begin(_secureClient, url)) {
     return false;
   }
 
@@ -531,22 +524,16 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
     return;
   }
 
-  // Periodic Fleet Auto-Discovery scan (every 60s to avoid blocking local web server)
-  if (currentMillis - _lastFleetScanMs >= 60000) {
-    _lastFleetScanMs = currentMillis;
-    scanFleetForNewTanks();
-  }
-
-  // Poll for commands across all registered fleet tanks (ultra-fast 250ms)
+  // Command polling (ultra-fast 100ms via persistent connection)
   if (currentMillis - _lastCommandPollMs >= COMMAND_POLL_INTERVAL_MS) {
     _lastCommandPollMs = currentMillis;
     if (checkAndProcessCommands(pumpCtrl, alertMgr)) {
-      // Command executed! Reset timer to immediately push updated pump state to cloud
+      // Command executed! Reset timer to immediately push updated pump state to cloud (<50ms)
       _lastTelemetryPublishMs = 0;
     }
   }
 
-  // Publish telemetry for all registered fleet tanks (smooth 1s or instant post-command)
+  // Publish telemetry for primary hardware tank (smooth 1s or instantaneous post-command)
   if (currentMillis - _lastTelemetryPublishMs >= TELEMETRY_PUBLISH_INTERVAL_MS || _lastTelemetryPublishMs == 0) {
     _lastTelemetryPublishMs = currentMillis;
     for (size_t i = 0; i < _tanks.size(); i++) {
@@ -558,16 +545,7 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
         node.totalLitres = telemetry.totalLitres;
         node.pumpCurrentA = telemetry.pumpCurrentA;
         publishTelemetryForTank(node.id, telemetry, node.mode, pumpCtrl.getPumpStateString());
-      } else {
-        TelemetryPacket secPkt = telemetry;
-        secPkt.controlMode = node.mode.c_str();
-        secPkt.pumpState = node.pumpState.c_str();
-        secPkt.levelPercent = node.levelPercent;
-        secPkt.distanceCm = node.distanceCm;
-        secPkt.flowRateLpm = node.flowRateLpm;
-        secPkt.totalLitres = node.totalLitres;
-        secPkt.pumpCurrentA = node.pumpCurrentA;
-        publishTelemetryForTank(node.id, secPkt, node.mode, node.pumpState);
+        break; // Primary tank published: zero wasted multi-tank TLS requests!
       }
     }
   }

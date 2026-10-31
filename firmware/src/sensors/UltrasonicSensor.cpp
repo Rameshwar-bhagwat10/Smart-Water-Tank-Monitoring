@@ -71,8 +71,8 @@ float UltrasonicSensor::readRawDistance() {
   delayMicroseconds(10);
   digitalWrite(_trigPin, LOW);
 
-  // Max acoustic range 400 cm -> ~23323 microseconds round-trip at 343 m/s
-  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 25000;
+  // Acoustic range ~300 cm -> 18000 microseconds round-trip at 343 m/s
+  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 18000;
   unsigned long duration = pulseIn(_echoPin, HIGH, MAX_ECHO_TIMEOUT_US);
 
   if (duration == 0) {
@@ -99,13 +99,13 @@ bool UltrasonicSensor::measure() {
     return false;
   }
 
-  // If sensor is connected, take 2 more samples for median filtering
+  // If sensor is connected, take 2 more fast samples for median filtering
   float samples[3];
   samples[0] = d0;
   int validCount = 1;
 
   for (int i = 1; i < 3; ++i) {
-    delay(10);
+    delayMicroseconds(600);
     float d = readRawDistance();
     if (d >= MIN_VALID_DISTANCE_CM && d <= MAX_VALID_DISTANCE_CM) {
       samples[validCount++] = d;
