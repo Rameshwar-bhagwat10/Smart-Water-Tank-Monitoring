@@ -121,10 +121,10 @@ constexpr uint32_t DRY_RUN_DETECTION_DELAY_MS = 5000UL;  // 5s sustained zero-fl
 constexpr uint32_t MIN_SWITCHING_INTERVAL_MS  = 250UL;   // 250ms anti-chatter rate limit
 
 // ============================================================================
-// CLOUD COMMUNICATION TIMERS
+// CLOUD COMMUNICATION TIMERS (Ultra-Fast Responsive Mode)
 // ============================================================================
-constexpr uint32_t TELEMETRY_PUBLISH_INTERVAL_MS = 2000UL; // 2s telemetry updates
-constexpr uint32_t COMMAND_POLL_INTERVAL_MS      = 1000UL; // 1s command check
+constexpr uint32_t TELEMETRY_PUBLISH_INTERVAL_MS = 1000UL; // 1s smooth telemetry updates
+constexpr uint32_t COMMAND_POLL_INTERVAL_MS      = 250UL;  // 250ms sub-second command polling
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS    = 15000UL;// 15s Wi-Fi background retry
 
 } // namespace SmartTank

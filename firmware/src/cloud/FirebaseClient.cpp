@@ -211,7 +211,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(2500);
+    client.setTimeout(1200);
 
     HTTPClient http;
     if (!http.begin(client, url)) {
@@ -528,14 +528,17 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
     scanFleetForNewTanks();
   }
 
-  // Poll for commands across all registered fleet tanks
+  // Poll for commands across all registered fleet tanks (ultra-fast 250ms)
   if (currentMillis - _lastCommandPollMs >= COMMAND_POLL_INTERVAL_MS) {
     _lastCommandPollMs = currentMillis;
-    checkAndProcessCommands(pumpCtrl, alertMgr);
+    if (checkAndProcessCommands(pumpCtrl, alertMgr)) {
+      // Command executed! Reset timer to immediately push updated pump state to cloud
+      _lastTelemetryPublishMs = 0;
+    }
   }
 
-  // Publish telemetry for all registered fleet tanks
-  if (currentMillis - _lastTelemetryPublishMs >= TELEMETRY_PUBLISH_INTERVAL_MS) {
+  // Publish telemetry for all registered fleet tanks (smooth 1s or instant post-command)
+  if (currentMillis - _lastTelemetryPublishMs >= TELEMETRY_PUBLISH_INTERVAL_MS || _lastTelemetryPublishMs == 0) {
     _lastTelemetryPublishMs = currentMillis;
     for (size_t i = 0; i < _tanks.size(); i++) {
       TankNode& node = _tanks[i];

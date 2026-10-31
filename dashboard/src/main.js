@@ -385,15 +385,16 @@ window._sM = async (mode) => {
   if (!currentUser) return;
   playWebBuzzer(2700, 0.15);
   const ak = document.getElementById('ak');
-  ak.textContent = 'Setting ' + mode + '...';
+  if (ak) ak.textContent = 'Setting ' + mode + '...';
+  // Instant optimistic feedback (<1ms)
+  currentMode = mode;
+  uMB(mode, lastPump);
   try {
-    await sendCommand(activeTankId, currentUser.uid, mode, mode === 'AUTO' ? 'OFF' : 'OFF');
-    ak.textContent = 'Mode: ' + mode;
-    currentMode = mode;
-    uMB(mode);
+    await sendCommand(activeTankId, currentUser.uid, mode, mode === 'AUTO' ? 'OFF' : (lastPump || 'OFF'));
+    if (ak) ak.textContent = mode === 'AUTO' ? 'Auto Control Active' : 'Manual Standby';
     addEvt('Mode → ' + mode, '#AF52DE');
   } catch (e) {
-    ak.textContent = 'Error: ' + e.message;
+    if (ak) ak.textContent = 'Error: ' + e.message;
   }
 };
 
@@ -401,13 +402,24 @@ window._sP = async (state) => {
   if (!currentUser) return;
   playWebBuzzer(2500, state === 'ON' ? 0.5 : 0.25);
   const ak = document.getElementById('ak');
-  ak.textContent = 'Pump ' + state + '...';
+  if (ak) ak.textContent = 'Pump ' + state + '...';
+
+  // Instant optimistic feedback (<1ms)
+  currentMode = 'MANUAL';
+  lastPump = state;
+  uMB('MANUAL', state);
+  const rp = document.getElementById('vr');
+  if (rp) {
+    if (state === 'ON') { rp.textContent = 'RUNNING'; rp.className = 'rp on'; }
+    else { rp.textContent = 'OFF'; rp.className = 'rp off'; }
+  }
+
   try {
     await sendCommand(activeTankId, currentUser.uid, 'MANUAL', state);
-    ak.textContent = 'Pump: ' + state;
+    if (ak) ak.textContent = 'Pump: ' + state;
     addEvt('Pump → ' + state, state === 'ON' ? '#34C759' : '#FF3B30');
   } catch (e) {
-    ak.textContent = 'Error: ' + e.message;
+    if (ak) ak.textContent = 'Error: ' + e.message;
   }
 };
 
@@ -485,7 +497,7 @@ function updateDashboard(d) {
 
   // Mode
   currentMode = mode;
-  uMB(mode);
+  uMB(mode, pump);
 
   // Timeline events & buzzer audio on state changes
   if (lastPump !== pump && lastPump !== '') {
@@ -517,7 +529,7 @@ function updateDashboard(d) {
 // ============================================================================
 // MODE BUTTONS
 // ============================================================================
-function uMB(m) {
+function uMB(m, p) {
   const a = m === 'AUTO';
   const ba = document.getElementById('ba');
   const bm = document.getElementById('bm');
@@ -527,6 +539,14 @@ function uMB(m) {
   const ap = document.getElementById('ap');
   if (as) as.disabled = a;
   if (ap) ap.disabled = a;
+  const ak = document.getElementById('ak');
+  if (ak) {
+    if (a) {
+      ak.textContent = 'Auto Control Active';
+    } else {
+      ak.textContent = (p === 'ON' || lastPump === 'ON') ? 'Manual: Pump RUNNING' : 'Manual: Pump STOPPED';
+    }
+  }
 }
 
 // ============================================================================

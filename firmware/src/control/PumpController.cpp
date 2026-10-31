@@ -243,6 +243,14 @@ CommandResult PumpController::requestManualPump(bool pumpOn, uint32_t currentMil
       return { false, "Safety lockout: Tank is already full (>= 95%)." };
     }
 
+    // Clear previous transient lockouts (dry-run, max runtime, sensor fault) on manual operator start
+    // (hard high-level cutoff and overflow probe remain strictly enforced above)
+    if (_lockout == SafetyLockout::DRY_RUN_DETECTED || 
+        _lockout == SafetyLockout::MAX_RUNTIME_EXCEEDED || 
+        _lockout == SafetyLockout::SENSOR_FAULT) {
+      _lockout = SafetyLockout::NONE;
+    }
+
     // Interlock 2: Active safety lockout
     if (_lockout != SafetyLockout::NONE) {
       return { false, "Safety lockout: Cannot start pump while safety fault is active." };

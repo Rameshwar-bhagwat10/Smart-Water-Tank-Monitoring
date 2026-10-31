@@ -279,10 +279,8 @@ void loop() {
   // 5. Serve Direct Phone Connections at http://192.168.4.1 (Maximum Priority)
   localServer.handleClient(now, pumpController, pkt, &alertMgr);
 
-  // 6. Cloud Firebase: Push telemetry + Poll remote commands
-  if (!localServer.hasRecentClient() || (now % 4 == 0)) {
-    firebaseClient.update(now, pumpController, pkt, &alertMgr);
-  }
+  // 6. Cloud Firebase: Real-time telemetry push + sub-second command polling
+  firebaseClient.update(now, pumpController, pkt, &alertMgr);
 
   // 7. Periodic Sensor Diagnostics Stream (~2s)
   if (now - lastSerialLogMs >= 2000) {
