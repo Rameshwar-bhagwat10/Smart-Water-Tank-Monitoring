@@ -17,8 +17,13 @@ import '../widgets/tank_cylinder_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   final User? user;
+  final bool isLocalMode;
 
-  const DashboardScreen({super.key, this.user});
+  const DashboardScreen({
+    super.key,
+    this.user,
+    this.isLocalMode = false,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -38,6 +43,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.isLocalMode) {
+      _telemetryService.setMode(StationConnectionMode.local);
+      _actuationLatency = 'Local Direct 0ms';
+    } else {
+      _telemetryService.setMode(StationConnectionMode.cloud);
+      _actuationLatency = 'Cloud RTDB';
+    }
     _telemetryService.start();
 
     _telemetry = _telemetryService.current;
@@ -83,7 +95,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final elapsed = DateTime.now().millisecondsSinceEpoch - t0;
       if (mounted) {
         setState(() {
-          _actuationLatency = 'Synced ${elapsed}ms';
+          _actuationLatency = _telemetryService.connectionMode == StationConnectionMode.local
+              ? 'Local $elapsed ms'
+              : 'Synced $elapsed ms';
         });
       }
     } catch (e) {
@@ -110,7 +124,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final elapsed = DateTime.now().millisecondsSinceEpoch - t0;
       if (mounted) {
         setState(() {
-          _actuationLatency = 'Actuated ${elapsed}ms';
+          _actuationLatency = _telemetryService.connectionMode == StationConnectionMode.local
+              ? 'Actuated $elapsed ms'
+              : 'Actuated $elapsed ms';
         });
       }
     } catch (e) {
@@ -123,7 +139,216 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _handleLogout() async {
-    await _authService.signOut();
+    if (widget.user != null) {
+      await _authService.signOut();
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _showConnectionModeDialog() {
+    final ipController = TextEditingController(text: _telemetryService.localStationIp);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        final isCloud = _telemetryService.connectionMode == StationConnectionMode.cloud;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Connection Mode Switcher',
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Choose how your phone connects to the Smart Water Tank:',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSec),
+              ),
+              const SizedBox(height: 16),
+
+              // Option 1: Cloud RTDB
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _telemetryService.setMode(StationConnectionMode.cloud);
+                    _actuationLatency = 'Cloud RTDB';
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isCloud ? AppColors.accent.withValues(alpha: 0.12) : AppColors.cardInset,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isCloud ? AppColors.accent : AppColors.border,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('☁️', style: TextStyle(fontSize: 22)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cloud RTDB Mode',
+                              style: GoogleFonts.outfit(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: isCloud ? AppColors.accent : AppColors.text,
+                              ),
+                            ),
+                            Text(
+                              'Access tank from anywhere worldwide via Firebase RTDB',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSec),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (isCloud)
+                        const Icon(Icons.check_circle_rounded, color: AppColors.accent, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Option 2: Direct Local Station (Offline)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _telemetryService.setMode(
+                      StationConnectionMode.local,
+                      customIp: ipController.text.trim(),
+                    );
+                    _actuationLatency = 'Local Direct 0ms';
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: !isCloud ? AppColors.cyan.withValues(alpha: 0.12) : AppColors.cardInset,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: !isCloud ? AppColors.cyan : AppColors.border,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('⚡', style: TextStyle(fontSize: 22)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Direct Local Mode (Offline)',
+                              style: GoogleFonts.outfit(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: !isCloud ? AppColors.cyan : AppColors.text,
+                              ),
+                            ),
+                            Text(
+                              'Sub-millisecond local LAN & AP without internet',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSec),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (!isCloud)
+                        const Icon(Icons.check_circle_rounded, color: AppColors.cyan, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // NodeMCU IP field
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardInset,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: TextField(
+                        controller: ipController,
+                        style: GoogleFonts.jetBrainsMono(fontSize: 13, color: AppColors.text),
+                        decoration: const InputDecoration(
+                          hintText: '192.168.4.1 or IP',
+                          hintStyle: TextStyle(color: AppColors.textMuted),
+                          border: InputBorder.none,
+                          prefixIcon: Icon(Icons.router_outlined, color: AppColors.textMuted, size: 18),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _telemetryService.setMode(
+                          StationConnectionMode.local,
+                          customIp: ipController.text.trim(),
+                        );
+                        _actuationLatency = 'Local Direct 0ms';
+                      });
+                      Navigator.pop(ctx);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.cyan,
+                      foregroundColor: AppColors.accentDark,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                    child: Text(
+                      'Apply IP',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -193,7 +418,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // Specs Footer
               SpecsFooterWidget(
                 telemetry: _telemetry,
-                userEmail: widget.user?.email ?? 'operator@gmail.com',
+                userEmail: widget.user?.email ?? 'Direct Local Operator',
                 tankId: _telemetryService.tankId,
               ),
               const SizedBox(height: 24),
@@ -205,6 +430,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildHeader() {
+    final isCloud = _telemetryService.connectionMode == StationConnectionMode.cloud;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -218,12 +445,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: AppColors.card,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.4),
+                  color: (isCloud ? AppColors.accent : AppColors.cyan).withValues(alpha: 0.4),
                   width: 1.2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.accent.withValues(alpha: 0.2),
+                    color: (isCloud ? AppColors.accent : AppColors.cyan).withValues(alpha: 0.2),
                     blurRadius: 10,
                   ),
                 ],
@@ -244,36 +471,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
 
-        // Status Badge + Logout Right
+        // Status Badge (Tap to switch mode) + Logout Right
         Row(
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(9999),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: AppColors.accent,
-                      shape: BoxShape.circle,
-                    ),
+            GestureDetector(
+              onTap: _showConnectionModeDialog,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(9999),
+                  border: Border.all(
+                    color: (isCloud ? AppColors.accent : AppColors.cyan).withValues(alpha: 0.4),
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Cloud Live',
-                    style: GoogleFonts.outfit(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.accent,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: isCloud ? AppColors.accent : AppColors.cyan,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    Text(
+                      isCloud ? 'Cloud Live' : 'Local Direct',
+                      style: GoogleFonts.outfit(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: isCloud ? AppColors.accent : AppColors.cyan,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.swap_horiz_rounded, size: 12, color: AppColors.textSec),
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 8),

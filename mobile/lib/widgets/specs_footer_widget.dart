@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/tank_telemetry.dart';
+import '../services/telemetry_service.dart';
 import '../theme/app_theme.dart';
 
 class SpecsFooterWidget extends StatelessWidget {
@@ -23,6 +24,9 @@ class SpecsFooterWidget extends StatelessWidget {
     final timeStr =
         '${lastTime.hour.toString().padLeft(2, '0')}:${lastTime.minute.toString().padLeft(2, '0')}:${lastTime.second.toString().padLeft(2, '0')}';
 
+    final isLocal = TelemetryService().connectionMode == StationConnectionMode.local;
+    final channelStr = isLocal ? '⚡ Direct Local Station (0ms)' : '☁️ Cloud RTDB & Direct LAN';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -32,13 +36,18 @@ class SpecsFooterWidget extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _buildRow('Channel', '☁️ Cloud RTDB & Direct LAN'),
+          _buildRow('Channel', channelStr),
           const Divider(color: AppColors.separator, height: 16),
           _buildRow('Tank ID', tankId),
           const Divider(color: AppColors.separator, height: 16),
           _buildRow('Operator', userEmail.isNotEmpty ? userEmail : 'operator@gmail.com'),
           const Divider(color: AppColors.separator, height: 16),
-          _buildRow('Node MCU IP', telemetry.deviceIp.isNotEmpty ? telemetry.deviceIp : '192.168.4.1 (AP)'),
+          _buildRow(
+            'Node MCU IP',
+            telemetry.deviceIp.isNotEmpty
+                ? telemetry.deviceIp
+                : (isLocal ? TelemetryService().localStationIp : '192.168.4.1 (AP)'),
+          ),
           const Divider(color: AppColors.separator, height: 16),
           _buildRow('Last Telemetry', timeStr),
         ],

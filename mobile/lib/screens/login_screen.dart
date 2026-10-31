@@ -2,7 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
+import '../services/telemetry_service.dart';
 import '../theme/app_theme.dart';
+import 'dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -81,6 +83,15 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _handleConnectDirectLocal() {
+    TelemetryService().setMode(StationConnectionMode.local);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const DashboardScreen(isLocalMode: true),
+      ),
+    );
   }
 
   @override
@@ -312,7 +323,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 16),
                   ],
 
-                  // Sign In Button
+                  // Cloud Sign In Button
                   SizedBox(
                     width: double.infinity,
                     height: 48,
@@ -342,7 +353,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  'Sign In to Station',
+                                  'Sign In via Cloud RTDB',
                                   style: GoogleFonts.outfit(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
@@ -351,12 +362,46 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 const Icon(
-                                  Icons.arrow_forward_rounded,
+                                  Icons.cloud_queue_rounded,
                                   size: 16,
                                   color: AppColors.accentDark,
                                 ),
                               ],
                             ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Direct Local Station Button (Offline / Hotspot / LAN)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: OutlinedButton(
+                      onPressed: _handleConnectDirectLocal,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: AppColors.cyan.withValues(alpha: 0.5),
+                          width: 1.5,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('⚡', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Direct Local Mode (Offline Wi-Fi / AP)',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.cyan,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -372,7 +417,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Secured by Firebase Cloud RTDB',
+                        'Dual-Mode: Cloud RTDB & Direct Offline LAN',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,

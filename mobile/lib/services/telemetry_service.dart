@@ -8,6 +8,11 @@ import 'package:http/http.dart' as http;
 import '../config/firebase_config.dart';
 import '../models/tank_telemetry.dart';
 
+enum StationConnectionMode {
+  cloud,
+  local,
+}
+
 class ActivityEvent {
   final String text;
   final String time;
@@ -26,6 +31,13 @@ class TelemetryService {
   TelemetryService._internal();
 
   final String tankId = FirebaseConfig.defaultTankId;
+
+  // Active Connection Mode (Cloud or Direct Local)
+  StationConnectionMode _connectionMode = StationConnectionMode.cloud;
+  StationConnectionMode get connectionMode => _connectionMode;
+
+  String _localStationIp = '192.168.4.1';
+  String get localStationIp => _localStationIp;
 
   // Stream controllers
   final _telemetryController = StreamController<TankTelemetry>.broadcast();
@@ -52,7 +64,7 @@ class TelemetryService {
 
   // Subscriptions & Timers
   StreamSubscription<DatabaseEvent>? _rtdbSubscription;
-  Timer? _restPollTimer;
+  Timer? _pollTimer;
   bool _isListening = false;
 
   // Optimistic locks
@@ -68,52 +80,70 @@ class TelemetryService {
   bool _lastProbe = false;
   int _lastFullAlarmMs = 0;
 
+  void setMode(StationConnectionMode mode, {String? customIp}) {
+    if (customIp != null && customIp.isNotEmpty) {
+      _localStationIp = customIp;
+    }
+    _connectionMode = mode;
+    if (_isListening) {
+      stop();
+      start();
+    }
+  }
+
   void start() {
     if (_isListening) return;
     _isListening = true;
 
-    addEvent('Station telemetry connecting...', 0xFFD4F63D);
-
-    // 1. Firebase Native RTDB Listener
-    try {
-      final db = FirebaseDatabase.instanceFor(
-        app: Firebase.app(),
-        databaseURL: FirebaseConfig.databaseURL,
-      );
-      final ref = db.ref('tanks/$tankId/live');
-
-      _rtdbSubscription = ref.onValue.listen((event) {
-        if (event.snapshot.value != null) {
-          final data = event.snapshot.value;
-          if (data is Map) {
-            _handleIncomingData(Map<dynamic, dynamic>.from(data));
-          }
-        }
-      }, onError: (err) {
-        debugPrint('[Telemetry] RTDB stream error: $err');
+    if (_connectionMode == StationConnectionMode.local) {
+      addEvent('Connecting to Local Station ($_localStationIp)...', 0xFFD4F63D);
+      // High-speed direct local polling (every 120ms)
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 120), (_) {
+        _pollLocalStation();
       });
-    } catch (e) {
-      debugPrint('[Telemetry] Failed to init native RTDB: $e');
+      _pollLocalStation();
+    } else {
+      addEvent('Connecting to Cloud RTDB...', 0xFFD4F63D);
+
+      // 1. Firebase Native RTDB Listener
+      try {
+        final db = FirebaseDatabase.instanceFor(
+          app: Firebase.app(),
+          databaseURL: FirebaseConfig.databaseURL,
+        );
+        final ref = db.ref('tanks/$tankId/live');
+
+        _rtdbSubscription = ref.onValue.listen((event) {
+          if (event.snapshot.value != null) {
+            final data = event.snapshot.value;
+            if (data is Map) {
+              _handleIncomingData(Map<dynamic, dynamic>.from(data));
+            }
+          }
+        }, onError: (err) {
+          debugPrint('[Telemetry] RTDB stream error: $err');
+        });
+      } catch (e) {
+        debugPrint('[Telemetry] Failed to init native RTDB: $e');
+      }
+
+      // 2. High-speed REST backup stream/poll (every 250ms)
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        _pollCloudRest();
+      });
+      _pollCloudRest();
     }
-
-    // 2. High-speed REST backup stream/poll (every 250ms) to ensure continuous ultra-fast reception
-    _restPollTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      _pollRestTelemetry();
-    });
-
-    // Run first poll immediately
-    _pollRestTelemetry();
   }
 
   void stop() {
     _isListening = false;
     _rtdbSubscription?.cancel();
     _rtdbSubscription = null;
-    _restPollTimer?.cancel();
-    _restPollTimer = null;
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
-  Future<void> _pollRestTelemetry() async {
+  Future<void> _pollCloudRest() async {
     try {
       final url = Uri.parse('${FirebaseConfig.databaseURL}/tanks/$tankId/live.json');
       final resp = await http.get(url).timeout(const Duration(milliseconds: 1500));
@@ -125,6 +155,31 @@ class TelemetryService {
       }
     } catch (_) {
       // Quiet fallback
+    }
+  }
+
+  Future<void> _pollLocalStation() async {
+    final targets = <Uri>[];
+    if (_localStationIp.isNotEmpty) {
+      targets.add(Uri.parse('http://$_localStationIp/api/live?_t=${DateTime.now().millisecondsSinceEpoch}'));
+    }
+    if (_localStationIp != '192.168.4.1') {
+      targets.add(Uri.parse('http://192.168.4.1/api/live?_t=${DateTime.now().millisecondsSinceEpoch}'));
+    }
+
+    for (final u in targets) {
+      try {
+        final resp = await http.get(u).timeout(const Duration(milliseconds: 400));
+        if (resp.statusCode == 200) {
+          final decoded = jsonDecode(resp.body);
+          if (decoded is Map) {
+            _handleIncomingData(decoded);
+            break;
+          }
+        }
+      } catch (_) {
+        // try next target
+      }
     }
   }
 
@@ -230,7 +285,7 @@ class TelemetryService {
   }
 
   // ============================================================================
-  // ULTRA-FAST DUAL-CHANNEL ACTUATION (<1ms optimistic + LAN REST + Cloud RTDB)
+  // ULTRA-FAST ACTUATION (Local 1ms REST + Cloud RTDB)
   // ============================================================================
   Future<void> sendCommand({
     required String? userId,
@@ -253,56 +308,63 @@ class TelemetryService {
     );
     _telemetryController.add(_currentTelemetry);
 
-    // 2. Direct LAN fast-path actuation (1ms latency when on same Wi-Fi)
+    // 2. Direct LAN fast-path actuation (1ms latency)
     final targets = <Uri>[];
-    if (_currentTelemetry.deviceIp.isNotEmpty) {
+    if (_localStationIp.isNotEmpty) {
+      targets.add(Uri.parse(
+          'http://$_localStationIp/api/command?mode=$mode&pump=$pumpState&_t=$now'));
+    }
+    if (_currentTelemetry.deviceIp.isNotEmpty && _currentTelemetry.deviceIp != _localStationIp) {
       targets.add(Uri.parse(
           'http://${_currentTelemetry.deviceIp}/api/command?mode=$mode&pump=$pumpState&_t=$now'));
     }
-    targets.add(Uri.parse(
-        'http://192.168.4.1/api/command?mode=$mode&pump=$pumpState&_t=$now'));
+    if (_localStationIp != '192.168.4.1') {
+      targets.add(Uri.parse(
+          'http://192.168.4.1/api/command?mode=$mode&pump=$pumpState&_t=$now'));
+    }
 
     for (final u in targets) {
       http.get(u).timeout(const Duration(milliseconds: 350)).catchError((_) => http.Response('', 500));
     }
 
-    // 3. Cloud RTDB write (synchronizes fleet & firmware in 30ms)
-    final cmdId = 'cmd_${now}_${(now % 99999).toString()}';
-    final cmdPayload = {
-      'commandId': cmdId,
-      'requestedMode': mode,
-      'requestedPumpState': pumpState,
-      'requestedAt': now,
-      'requestedBy': userId ?? 'mobile-operator',
-    };
+    // 3. If in Cloud mode, also synchronize with Firebase Cloud RTDB
+    if (_connectionMode == StationConnectionMode.cloud) {
+      final cmdId = 'cmd_${now}_${(now % 99999).toString()}';
+      final cmdPayload = {
+        'commandId': cmdId,
+        'requestedMode': mode,
+        'requestedPumpState': pumpState,
+        'requestedAt': now,
+        'requestedBy': userId ?? 'mobile-operator',
+      };
 
-    final liveUpdate = {
-      'controlMode': mode,
-      'updatedAt': now,
-    };
-    if (mode == 'MANUAL') {
-      liveUpdate['pumpState'] = pumpState;
-    }
+      final liveUpdate = {
+        'controlMode': mode,
+        'updatedAt': now,
+      };
+      if (mode == 'MANUAL') {
+        liveUpdate['pumpState'] = pumpState;
+      }
 
-    try {
-      final db = FirebaseDatabase.instanceFor(
-        app: Firebase.app(),
-        databaseURL: FirebaseConfig.databaseURL,
-      );
-      await Future.wait([
-        db.ref('tanks/$tankId/commands').set(cmdPayload),
-        db.ref('tanks/$tankId/live').update(liveUpdate),
-      ]);
-    } catch (e) {
-      // Fallback via HTTP REST PUT if native SDK encounters timeout
-      final cmdUrl = Uri.parse('${FirebaseConfig.databaseURL}/tanks/$tankId/commands.json');
-      final liveUrl = Uri.parse('${FirebaseConfig.databaseURL}/tanks/$tankId/live.json');
       try {
+        final db = FirebaseDatabase.instanceFor(
+          app: Firebase.app(),
+          databaseURL: FirebaseConfig.databaseURL,
+        );
         await Future.wait([
-          http.put(cmdUrl, body: jsonEncode(cmdPayload)),
-          http.patch(liveUrl, body: jsonEncode(liveUpdate)),
+          db.ref('tanks/$tankId/commands').set(cmdPayload),
+          db.ref('tanks/$tankId/live').update(liveUpdate),
         ]);
-      } catch (_) {}
+      } catch (e) {
+        final cmdUrl = Uri.parse('${FirebaseConfig.databaseURL}/tanks/$tankId/commands.json');
+        final liveUrl = Uri.parse('${FirebaseConfig.databaseURL}/tanks/$tankId/live.json');
+        try {
+          await Future.wait([
+            http.put(cmdUrl, body: jsonEncode(cmdPayload)),
+            http.patch(liveUrl, body: jsonEncode(liveUpdate)),
+          ]);
+        } catch (_) {}
+      }
     }
   }
 }
