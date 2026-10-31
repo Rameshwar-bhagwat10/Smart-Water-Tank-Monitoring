@@ -244,7 +244,6 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
       <button class="ab bs" id="as" onclick="sP('ON')">⚡ Start</button>
       <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
     </div>
-    <button class="ab" id="ab-beep" onclick="sB()" style="width:100%;margin-top:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);font-size:12px;font-weight:600;padding:8px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">🔊 Test Buzzer (1s Beep)</button>
     <div class="fr">
       <span>Status: <b id="ak">Standby</b></span>
       <span id="st" style="font-size:10px;font-family:monospace">Ready</span>
@@ -604,18 +603,6 @@ async function sP(s){
     cM=d.mode||'MANUAL';lastPump=d.pump;uMB(cM,d.pump);poll();
   }catch(e){document.getElementById('ak').innerText='Error';}
   finally{iS=false;}
-}
-
-async function sB(){
-  playWebBuzzer(2500,1000);
-  document.getElementById('ak').innerText='Buzzer 1s Beep...';
-  try{
-    await fetch('/api/command?pump=BEEP');
-    document.getElementById('ak').innerText='Buzzer beeped!';
-    setTimeout(()=>{document.getElementById('ak').innerText='Ready';},2000);
-  }catch(e){
-    document.getElementById('ak').innerText='Beep Failed';
-  }
 }
 
 // Instant 0ms Paint & Polling Loop
