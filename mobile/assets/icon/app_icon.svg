@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGlow" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#1B2234"/>
+      <stop offset="60%" stop-color="#0E121B"/>
+      <stop offset="100%" stop-color="#07090D"/>
+    </radialGradient>
+
+    <!-- Border Glow Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4F63D"/>
+      <stop offset="50%" stop-color="#3DF6D9"/>
+      <stop offset="100%" stop-color="#007AFF"/>
+    </linearGradient>
+
+    <!-- Liquid Gradient -->
+    <linearGradient id="liquidGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0066FF"/>
+      <stop offset="45%" stop-color="#3DF6D9"/>
+      <stop offset="100%" stop-color="#D4F63D"/>
+    </linearGradient>
+
+    <!-- Droplet Glow Gradient -->
+    <radialGradient id="dropGrad" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="25%" stop-color="#E2FC5B"/>
+      <stop offset="70%" stop-color="#D4F63D"/>
+      <stop offset="100%" stop-color="#3DF6D9"/>
+    </radialGradient>
+
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="dropGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="glow"/>
+      <feComposite in="SourceGraphic" in2="glow" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bgGlow)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="url(#borderGrad)" stroke-width="4.5" opacity="0.85"/>
+
+  <!-- Top IoT Ultrasonic Pulses -->
+  <path d="M 206 72 A 54 54 0 0 1 306 72" fill="none" stroke="#D4F63D" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+  <path d="M 186 54 A 78 78 0 0 1 326 54" fill="none" stroke="#3DF6D9" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M 166 36 A 104 104 0 0 1 346 36" fill="none" stroke="#D4F63D" stroke-width="4" stroke-linecap="round" filter="url(#neonGlow)"/>
+
+  <!-- Sensor Cap -->
+  <rect x="236" y="82" width="40" height="12" rx="4" fill="#3DF6D9" filter="url(#neonGlow)"/>
+
+  <!-- Water Tank Cylinder Outer -->
+  <rect x="126" y="98" width="260" height="340" rx="48" fill="#111520" stroke="rgba(255, 255, 255, 0.12)" stroke-width="3"/>
+  <rect x="132" y="104" width="248" height="328" rx="42" fill="#0C0F17"/>
+
+  <!-- Measurement Tick Marks -->
+  <line x1="352" y1="140" x2="366" y2="140" stroke="#D4F63D" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <line x1="356" y1="190" x2="366" y2="190" stroke="rgba(255,255,255,0.3)" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="352" y1="240" x2="366" y2="240" stroke="#3DF6D9" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <line x1="356" y1="290" x2="366" y2="290" stroke="rgba(255,255,255,0.3)" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="352" y1="340" x2="366" y2="340" stroke="#007AFF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <line x1="352" y1="390" x2="366" y2="390" stroke="rgba(255,255,255,0.4)" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Liquid Fill inside Tank -->
+  <g clip-path="url(#tankClip)">
+    <clipPath id="tankClip">
+      <rect x="132" y="104" width="248" height="328" rx="42"/>
+    </clipPath>
+
+    <!-- Liquid Body with Wave -->
+    <path d="M 120 440 L 120 230 C 180 215, 220 245, 280 230 C 330 218, 360 226, 400 230 L 400 440 Z" fill="url(#liquidGrad)"/>
+
+    <!-- Wave Surface Neon Line -->
+    <path d="M 120 230 C 180 215, 220 245, 280 230 C 330 218, 360 226, 400 230" fill="none" stroke="#FFFFFF" stroke-width="3.5" filter="url(#neonGlow)"/>
+
+    <!-- Ambient Glow beneath surface -->
+    <ellipse cx="256" cy="330" rx="90" ry="60" fill="rgba(61, 246, 217, 0.25)" filter="url(#dropGlow)"/>
+  </g>
+
+  <!-- Hero Water Droplet Icon at Center -->
+  <g filter="url(#dropGlow)" transform="translate(0, -6)">
+    <!-- Droplet Body -->
+    <path d="M 256 168 C 256 168, 204 246, 204 286 A 52 52 0 0 0 308 286 C 308 246, 256 168, 256 168 Z" fill="url(#dropGrad)"/>
+    
+    <!-- Specular Highlight -->
+    <ellipse cx="240" cy="265" rx="10" ry="16" transform="rotate(-28 240 265)" fill="#FFFFFF" opacity="0.85"/>
+    <circle cx="270" cy="295" r="5" fill="#FFFFFF" opacity="0.75"/>
+  </g>
+
+  <!-- Sparkle Accent Dot -->
+  <circle cx="340" cy="116" r="4.5" fill="#D4F63D" filter="url(#neonGlow)"/>
+</svg>

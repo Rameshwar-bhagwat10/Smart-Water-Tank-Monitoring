@@ -122,11 +122,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   // App Icon Container
                   Container(
-                    width: 58,
-                    height: 58,
+                    width: 64,
+                    height: 64,
                     decoration: BoxDecoration(
                       color: AppColors.cardInset,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: AppColors.accent.withValues(alpha: 0.4),
                         width: 1.5,
@@ -138,8 +138,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ),
-                    alignment: Alignment.center,
-                    child: const Text('💧', style: TextStyle(fontSize: 26)),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'assets/icon/app_icon.png',
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                   const SizedBox(height: 18),
 

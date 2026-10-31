@@ -14,7 +14,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Smart Water Tank</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z' fill='%23D4F63D'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect x='16' y='16' width='480' height='480' rx='112' fill='%230E121B' stroke='%23D4F63D' stroke-width='8'/%3E%3Cpath d='M166 42 A104 104 0 0 1 346 42' fill='none' stroke='%23D4F63D' stroke-width='16' stroke-linecap='round'/%3E%3Cpath d='M186 64 A78 78 0 0 1 326 64' fill='none' stroke='%233DF6D9' stroke-width='14' stroke-linecap='round'/%3E%3Crect x='126' y='98' width='260' height='340' rx='48' fill='%23131722' stroke='rgba(255,255,255,0.15)' stroke-width='6'/%3E%3Cpath d='M132 290 C180 270, 230 300, 280 280 C330 268, 360 276, 380 285 L380 400 C380 422, 360 428, 340 428 L170 428 C150 428, 132 422, 132 400 Z' fill='%233DF6D9'/%3E%3Cpath d='M256 168 C256 168, 204 246, 204 286 A52 52 0 0 0 308 286 C308 246, 256 168, 256 168 Z' fill='%23D4F63D'/%3E%3Cellipse cx='240' cy='265' rx='10' ry='16' transform='rotate(-28 240 265)' fill='%23FFFFFF' opacity='0.85'/%3E%3C/svg%3E">
 <style>
 :root {
   --bg: #090B10;
@@ -152,8 +152,14 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
   <div class="hd">
     <div class="hd-brand">
       <div class="hd-icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" fill="currentColor" stroke="none"/>
+        <svg width="22" height="22" viewBox="0 0 512 512" fill="none">
+          <rect x="24" y="24" width="464" height="464" rx="108" fill="#131722" stroke="#D4F63D" stroke-width="14"/>
+          <path d="M 166 46 A 104 104 0 0 1 346 46" fill="none" stroke="#D4F63D" stroke-width="20" stroke-linecap="round"/>
+          <path d="M 186 68 A 78 78 0 0 1 326 68" fill="none" stroke="#3DF6D9" stroke-width="16" stroke-linecap="round"/>
+          <rect x="126" y="100" width="260" height="336" rx="46" fill="#0C0F17" stroke="rgba(255, 255, 255, 0.15)" stroke-width="10"/>
+          <path d="M 132 295 C 180 275, 230 305, 280 285 C 330 272, 360 280, 380 290 L 380 398 C 380 420, 360 426, 340 426 L 170 426 C 150 426, 132 420, 132 398 Z" fill="#3DF6D9"/>
+          <path d="M 256 168 C 256 168, 204 246, 204 286 A 52 52 0 0 0 308 286 C 308 246, 256 168, 256 168 Z" fill="#D4F63D"/>
+          <ellipse cx="240" cy="265" rx="10" ry="16" transform="rotate(-28 240 265)" fill="#FFFFFF" opacity="0.85"/>
         </svg>
       </div>
       <div class="hd-t">Water Tank</div>

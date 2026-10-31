@@ -130,9 +130,7 @@ function showLogin() {
   <div class="login-wrap">
     <div class="login-card">
       <div class="login-app-icon">
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" fill="currentColor" stroke="none"/>
-        </svg>
+        <img src="/favicon.svg" width="38" height="38" alt="Smart Water Tank" />
       </div>
       <h1 class="login-title">Smart Water Tank <span class="login-title-dot"></span></h1>
       <p class="login-sub">Cloud IoT Monitoring & Autonomous Control</p>
@@ -260,9 +258,7 @@ function showDashboard() {
     <div class="hd">
       <div class="hd-brand">
         <div class="hd-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" fill="currentColor" stroke="none"/>
-          </svg>
+          <img src="/favicon.svg" width="22" height="22" alt="Water Tank" />
         </div>
         <div class="hd-t">Water Tank</div>
       </div>

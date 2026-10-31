@@ -18,11 +18,13 @@ import '../widgets/tank_cylinder_widget.dart';
 class DashboardScreen extends StatefulWidget {
   final User? user;
   final bool isLocalMode;
+  final VoidCallback? onSwitchToCloud;
 
   const DashboardScreen({
     super.key,
     this.user,
     this.isLocalMode = false,
+    this.onSwitchToCloud,
   });
 
   @override
@@ -141,6 +143,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _handleLogout() async {
     if (widget.user != null) {
       await _authService.signOut();
+    } else if (widget.onSwitchToCloud != null) {
+      widget.onSwitchToCloud!();
     } else {
       Navigator.of(context).pop();
     }
@@ -196,6 +200,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // Option 1: Cloud RTDB
               GestureDetector(
                 onTap: () {
+                  if (widget.user == null && widget.onSwitchToCloud != null) {
+                    Navigator.pop(ctx);
+                    widget.onSwitchToCloud!();
+                    return;
+                  }
                   setState(() {
                     _telemetryService.setMode(StationConnectionMode.cloud);
                     _actuationLatency = 'Cloud RTDB';
@@ -455,8 +464,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              alignment: Alignment.center,
-              child: const Text('💧', style: TextStyle(fontSize: 18)),
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset(
+                'assets/icon/app_icon.png',
+                width: 38,
+                height: 38,
+                fit: BoxFit.cover,
+              ),
             ),
             const SizedBox(width: 10),
             Text(
