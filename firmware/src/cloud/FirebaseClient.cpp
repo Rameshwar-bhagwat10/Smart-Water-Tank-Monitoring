@@ -203,40 +203,51 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
 
   bool anyProcessed = false;
 
+  // Ultra-Fast Path: Direct single-query for physical hardware tank
+  TankNode* pNode = nullptr;
   for (size_t i = 0; i < _tanks.size(); i++) {
-    TankNode& node = _tanks[i];
-    String endpoint = "/tanks/" + node.id + "/commands";
-    String url = buildUrl(endpoint);
-    if (url.length() == 0) continue;
-
-    WiFiClientSecure client;
-    client.setInsecure();
-    client.setTimeout(1200);
-
-    HTTPClient http;
-    if (!http.begin(client, url)) {
-      continue;
+    if (_tanks[i].id == _primaryTankId) {
+      pNode = &_tanks[i];
+      break;
     }
+  }
+  if (!pNode && _tanks.size() > 0) pNode = &_tanks[0];
+  if (!pNode) return false;
 
-    int httpCode = http.GET();
-    if (httpCode != 200) {
-      http.end();
-      continue;
-    }
+  TankNode& node = *pNode;
+  String endpoint = "/tanks/" + node.id + "/commands";
+  String url = buildUrl(endpoint);
+  if (url.length() == 0) return false;
 
-    String payload = http.getString();
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(800);
+
+  HTTPClient http;
+  http.setReuse(true);
+  if (!http.begin(client, url)) {
+    return false;
+  }
+
+  int httpCode = http.GET();
+  if (httpCode != 200) {
     http.end();
+    return false;
+  }
+
+  String payload = http.getString();
+  http.end();
 
     if (payload.length() == 0 || payload == "null") {
       if (!node.baselineEstablished) {
         node.baselineEstablished = true;
       }
-      continue;
+      return false;
     }
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
-    if (err) continue;
+    if (err) return false;
 
     const char* cmdId = doc["commandId"] | "";
     const char* reqMode = doc["requestedMode"] | "";
@@ -249,7 +260,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
       if (!node.baselineEstablished) {
         node.baselineEstablished = true;
       }
-      continue;
+      return false;
     }
 
     // Baseline establishment on startup (avoids replaying historical commands on boot)
@@ -259,12 +270,12 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
       node.baselineEstablished = true;
       node.mode = reqMode;
       node.pumpState = reqState;
-      continue;
+      return false;
     }
 
     // Deduplication check
     if (strcmp(node.lastProcessedCommandId, cmdId) == 0) {
-      continue;
+      return false;
     }
 
     // TTL Expiry Check (60s)
@@ -276,7 +287,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
         sendCommandAck(node.id.c_str(), cmdId, "REJECTED", "Command expired: older than 60s TTL limit");
         strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
         node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
-        continue;
+        return false;
       }
     }
 
@@ -305,8 +316,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
       Serial.println();
       strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
       node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
-      anyProcessed = true;
-      continue;
+      return true;
     }
 
     // Apply Command
@@ -353,7 +363,6 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
     strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
     node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
     anyProcessed = true;
-  }
 
   return anyProcessed;
 }
