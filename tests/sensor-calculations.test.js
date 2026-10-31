@@ -179,48 +179,67 @@ describe('Sensor Calculations & Calibration Engine', () => {
     });
   });
 
-  describe('ACS712 Current Sensing with External Voltage Divider Attenuation', () => {
+  describe('ACS712 Current Sensing with Direct NodeMCU A0 Input (1:1 Ratio)', () => {
     const ADC_MAX_VOLTS = 3.3;
-    const SENSITIVITY = 0.185; // 185 mV/A (5A model)
-    const DIVIDER_RATIO = 18.0 / (10.0 + 18.0); // 0.642857 (10k upper, 18k lower)
-    // At zero current, sensor outputs 2.50V. Through divider, voltage at A0 = 2.50 * 0.642857 = 1.6071V.
-    // ADC count = (1.6071 / 3.3) * 1023 ≈ 498 counts.
-    const ZERO_OFFSET_ADC = Math.round((2.50 * DIVIDER_RATIO / ADC_MAX_VOLTS) * 1023); // ~498
+    const SENSITIVITY_05B = 0.185; // 185 mV/A (5A model)
+    const SENSITIVITY_20A = 0.100; // 100 mV/A (20A model)
+    const SENSITIVITY_30A = 0.066; // 66 mV/A (30A model)
+    const DIVIDER_RATIO_DIRECT = 1.0; // Confirmed: No external divider on breadboard
 
-    function calculateCurrentWithDivider(adcSample, zeroAdc, dividerRatio = DIVIDER_RATIO) {
+    // At 0A, ACS712 outputs 2.50V (VCC / 2). With direct A0 input:
+    // ADC count = (2.50 / 3.3) * 1023 ≈ 775 counts.
+    const ZERO_OFFSET_ADC = Math.round((2.50 / ADC_MAX_VOLTS) * 1023); // 775
+
+    function calculateCurrentDirect(adcSample, zeroAdc = ZERO_OFFSET_ADC, sensitivity = SENSITIVITY_05B) {
+      if (adcSample < 0 || adcSample > 1023) {
+        return { valid: false, currentAmps: 0.0, error: 'ADC_OUT_OF_BOUNDS' };
+      }
       const vAdc = (adcSample / 1023) * ADC_MAX_VOLTS;
       const vZero = (zeroAdc / 1023) * ADC_MAX_VOLTS;
-      const vSensor = vAdc / dividerRatio;
-      const vSensorZero = vZero / dividerRatio;
-      const deltaV = Math.abs(vSensor - vSensorZero);
-      let amps = deltaV / SENSITIVITY;
+      const deltaV = Math.abs(vAdc - vZero);
+      let amps = deltaV / sensitivity;
       if (amps < 0.08) amps = 0.0;
       return { valid: true, currentAmps: Number(amps.toFixed(2)) };
     }
 
-    it('reports zero current at calibrated quiescent offset with external divider', () => {
-      const res = calculateCurrentWithDivider(ZERO_OFFSET_ADC, ZERO_OFFSET_ADC);
+    it('reports zero current at calibrated 2.5V quiescent baseline with direct A0', () => {
+      const res = calculateCurrentDirect(ZERO_OFFSET_ADC, ZERO_OFFSET_ADC, SENSITIVITY_05B);
       assert.strictEqual(res.valid, true);
       assert.strictEqual(res.currentAmps, 0.0);
     });
 
-    it('accurately reconstructs sensor voltage and current under 2A load with divider', () => {
-      // At 2.0A: sensor output = 2.50 + (2.0 * 0.185) = 2.87V
-      // At A0 = 2.87 * (18 / 28) = 1.845V
-      // ADC count = (1.845 / 3.3) * 1023 ≈ 572 counts
-      const res = calculateCurrentWithDivider(572, ZERO_OFFSET_ADC);
+    it('accurately calculates DC current for 5A variant (185 mV/A) under direct A0 load', () => {
+      // 1.5A load -> deltaV = 1.5 * 0.185 = 0.2775V -> V_adc = 2.50 + 0.2775 = 2.7775V
+      // ADC count = (2.7775 / 3.3) * 1023 ≈ 861 counts
+      const res = calculateCurrentDirect(861, ZERO_OFFSET_ADC, SENSITIVITY_05B);
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(Math.abs(res.currentAmps - 1.5) <= 0.05, true);
+    });
+
+    it('accurately calculates DC current for 20A variant (100 mV/A)', () => {
+      // 2.0A load on 20A variant -> deltaV = 2.0 * 0.100 = 0.200V -> V_adc = 2.70V
+      // ADC count = (2.70 / 3.3) * 1023 ≈ 837 counts
+      const res = calculateCurrentDirect(837, ZERO_OFFSET_ADC, SENSITIVITY_20A);
       assert.strictEqual(res.valid, true);
       assert.strictEqual(Math.abs(res.currentAmps - 2.0) <= 0.05, true);
     });
 
-    it('detects motor running when current exceeds threshold (e.g. 0.2A)', () => {
-      const resIdle = calculateCurrentWithDivider(ZERO_OFFSET_ADC, ZERO_OFFSET_ADC);
-      const isMotorRunningIdle = resIdle.currentAmps >= 0.2;
-      assert.strictEqual(isMotorRunningIdle, false);
+    it('accurately calculates DC current for 30A variant (66 mV/A)', () => {
+      // 3.0A load on 30A variant -> deltaV = 3.0 * 0.066 = 0.198V -> V_adc = 2.698V
+      // ADC count = (2.698 / 3.3) * 1023 ≈ 836 counts
+      const res = calculateCurrentDirect(836, ZERO_OFFSET_ADC, SENSITIVITY_30A);
+      assert.strictEqual(res.valid, true);
+      assert.strictEqual(Math.abs(res.currentAmps - 3.0) <= 0.05, true);
+    });
 
-      const resRunning = calculateCurrentWithDivider(572, ZERO_OFFSET_ADC);
-      const isMotorRunningActive = resRunning.currentAmps >= 0.2;
-      assert.strictEqual(isMotorRunningActive, true);
+    it('rejects invalid or saturated out-of-range ADC samples', () => {
+      const resNegative = calculateCurrentDirect(-10);
+      assert.strictEqual(resNegative.valid, false);
+      assert.strictEqual(resNegative.error, 'ADC_OUT_OF_BOUNDS');
+
+      const resSaturated = calculateCurrentDirect(1050);
+      assert.strictEqual(resSaturated.valid, false);
+      assert.strictEqual(resSaturated.error, 'ADC_OUT_OF_BOUNDS');
     });
   });
 

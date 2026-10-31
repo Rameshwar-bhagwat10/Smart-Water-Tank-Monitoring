@@ -11,7 +11,8 @@ public:
 
   void begin();
   void update(uint32_t currentMillis, bool wifiConnected, bool pumpRunning, SafetyLockout lockout);
-  void triggerChirp(uint16_t durationMs = 100);
+  void triggerChirp(uint16_t durationMs = 80);
+  void playTone(uint16_t frequencyHz = 2500, uint16_t durationMs = 1000);
 
 private:
   uint8_t _greenLed;

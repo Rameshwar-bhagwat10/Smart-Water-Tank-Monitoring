@@ -8,12 +8,16 @@
 #include "sensors/UltrasonicSensor.h"
 #include "sensors/FlowSensor.h"
 #include "sensors/CurrentSensor.h"
+#include "sensors/WaterLevelProbe.h"
 #include "control/RelayDriver.h"
 #include "control/PumpController.h"
 #include "diagnostics/AlertManager.h"
 #include "cloud/FirebaseClient.h"
 
-// Hardware driver instances
+// ============================================================================
+// HARDWARE DRIVER INSTANCES (Matching Confirmed Physical Wiring)
+// ============================================================================
+// 1. HC-SR04 Ultrasonic Distance Sensor (D1 Trig, D2 Echo via 1k/2k Divider)
 SmartTank::UltrasonicSensor ultrasonic(
   SmartTank::PIN_ULTRASONIC_TRIG,
   SmartTank::PIN_ULTRASONIC_ECHO,
@@ -21,22 +25,33 @@ SmartTank::UltrasonicSensor ultrasonic(
   SmartTank::DEFAULT_FULL_DISTANCE_CM
 );
 
+// 2. ZJ-S201 Water Flow Sensor (D5 Pulse Input with 10k Pull-up to 3.3V)
 SmartTank::FlowSensor flowSensor(
   SmartTank::PIN_FLOW_SENSOR,
   SmartTank::DEFAULT_PULSES_PER_LITRE
 );
 
+// 3. ACS712 Hall-Effect Current Sensor (A0 Analog Input)
 SmartTank::CurrentSensor currentSensor(
   SmartTank::PIN_CURRENT_SENSOR,
   SmartTank::ACS712_SENSITIVITY_MV_PER_A,
-  SmartTank::ACS712_QUIESCENT_MV
+  SmartTank::ACS712_QUIESCENT_MV,
+  SmartTank::ACS712_DIVIDER_RATIO
 );
 
+// 4. Water-Level Contact Probe / LM393 Comparator Module (D7 Digital Input)
+SmartTank::WaterLevelProbe waterProbe(
+  SmartTank::PIN_WATER_PROBE_DO,
+  SmartTank::WATER_PROBE_ACTIVE_LOW
+);
+
+// 5. Optocoupled Relay Module (D6 Control Output - Latched Safe at Boot)
 SmartTank::RelayDriver relay(
   SmartTank::PIN_RELAY,
   SmartTank::RELAY_ACTIVE_LOW
 );
 
+// 6. Diagnostics & Audio Alerts (D0 Buzzer Positive)
 SmartTank::AlertManager alertMgr(
   SmartTank::PIN_LED_GREEN,
   SmartTank::PIN_LED_YELLOW,
@@ -45,6 +60,7 @@ SmartTank::AlertManager alertMgr(
   SmartTank::RED_LED_ACTIVE_LOW
 );
 
+// 7. Local Autonomous Pump Safety Controller (Default: Safe MANUAL Mode)
 SmartTank::PumpController pumpController(
   relay,
   SmartTank::AUTO_START_LEVEL_PERCENT,
@@ -93,46 +109,65 @@ void setup() {
   Serial.println();
   Serial.println(F("========================================================="));
   Serial.println(F("  Smart Water Tank Monitoring System — ESP8266 NodeMCU  "));
-  Serial.println(F("  Hybrid Engine: Direct Local Server + Cloud Gateway    "));
+  Serial.println(F("  Firmware Updated for Confirmed Physical Wiring        "));
   Serial.println(F("========================================================="));
 
   // 1. Initialize Relay FIRST (De-energizes pin BEFORE setting OUTPUT mode)
   relay.begin();
+  Serial.printf("[Boot] Relay on D6 / GPIO12 initialized: %s (Active-LOW: %s)\n",
+    relay.getStateString(), SmartTank::RELAY_ACTIVE_LOW ? "YES" : "NO");
 
-  // 2. Initialize Diagnostics & Transducers
+  // 2. Report Pin Assignments
+  Serial.println(F("[Hardware] Pin Mapping Configuration:"));
+  Serial.printf("  - D0 / GPIO16 : Piezo Buzzer Output (3.3V)\n");
+  Serial.printf("  - D1 / GPIO5  : HC-SR04 Ultrasonic Trigger\n");
+  Serial.printf("  - D2 / GPIO4  : HC-SR04 Ultrasonic Echo (via 1k/2k Divider)\n");
+  Serial.printf("  - D3 / GPIO0  : Onboard Flash Button (Reset / Recovery)\n");
+  Serial.printf("  - D5 / GPIO14 : ZJ-S201 Flow Sensor (10k Pull-up to 3.3V)\n");
+  Serial.printf("  - D6 / GPIO12 : Relay Module Control (Safe Latched OFF)\n");
+  Serial.printf("  - D7 / GPIO13 : Water-Level Probe Comparator DO\n");
+  Serial.printf("  - A0 / ADC0   : ACS712 Current Sensor Analog OUT\n");
+
+  // 3. Initialize Diagnostics & Transducers
   alertMgr.begin();
   ultrasonic.begin();
   flowSensor.begin();
   currentSensor.begin();
+  waterProbe.begin();
+  Serial.println(F("[Hardware] Transducers initialized successfully."));
 
-  // 3. Initialize Flash Button (GPIO0 / D3)
-  pinMode(0, INPUT_PULLUP);
+  // 4. Initialize Flash Button (GPIO0 / D3)
+  pinMode(SmartTank::PIN_BUTTON_FLASH, INPUT_PULLUP);
 
-  // 4. Initialize Non-Volatile Configuration Store
+  // 5. Initialize Non-Volatile Configuration Store
   SmartTank::ConfigManager::begin();
 
   // Check if Flash button is held down at boot (Manual Setup Force)
-  bool forcePortal = (digitalRead(0) == LOW);
+  bool forcePortal = (digitalRead(SmartTank::PIN_BUTTON_FLASH) == LOW);
   if (forcePortal) {
     Serial.println(F("[Boot] Flash button held at power-up. Forcing Captive Portal..."));
   }
 
-  // 4. Initialize local autonomous pump state machine
+  // 6. Initialize local autonomous pump state machine (Boot in Safe MANUAL Mode)
   pumpController.begin();
+  Serial.printf("[Safety] Controller Mode: %s | Relay: %s (Auto-pumping disabled for bench testing)\n",
+    pumpController.getModeString(), pumpController.getPumpStateString());
 
-  // 5. Calibrate ACS712 zero offset while pump is verified OFF
-  Serial.println(F("[Hardware] Calibrating ACS712 zero offset..."));
+  // 7. Calibrate ACS712 zero offset while pump is verified OFF
+  Serial.println(F("[Hardware] Calibrating ACS712 zero offset at no-load baseline..."));
   currentSensor.calibrateZero();
+  Serial.printf("  -> Raw ADC Offset: %d counts (~%.1f mV)\n",
+    currentSensor.getLastRawAdc(), currentSensor.getZeroOffsetMv());
 
-  // 6. DUAL MODE: Local AP + Cloud Router Connection (AP_STA)
+  // 8. DUAL MODE: Local AP + Cloud Router Connection (AP_STA)
   WiFi.mode(WIFI_AP_STA);
   IPAddress localIp(192, 168, 4, 1);
   WiFi.softAPConfig(localIp, localIp, IPAddress(255, 255, 255, 0));
   const char* apSsid = "SmartWaterTank";
-  const char* apPass = "SmartWaterTank";
+  const char* apPass = SmartTank::DEFAULT_AP_PASSWORD;
   WiFi.softAP(apSsid, apPass);
 
-  // 7. Start Instant Embedded Local Web Dashboard FIRST
+  // 9. Start Instant Embedded Local Web Dashboard FIRST
   localServer.begin(TANK_ID);
 
   Serial.println(F("========================================================="));
@@ -141,15 +176,13 @@ void setup() {
   Serial.println(F("[Local] Dashboard URL  : http://192.168.4.1"));
   Serial.println(F("========================================================="));
 
-  // 8. Connect to Hotspot for Cloud Firebase Access
+  // 10. Connect to Hotspot for Cloud Firebase Access
   Serial.printf("[Wi-Fi] Connecting to hotspot '%s'...\n", WIFI_SSID);
-  Serial.print(F("[Wi-Fi] Awaiting connection (up to 10s)"));
-
-  firebaseClient.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   uint32_t startAttempt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 8000) {
+    delay(400);
     Serial.print(F("."));
     yield();
   }
@@ -162,39 +195,39 @@ void setup() {
     Serial.printf("  Station IP : %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("  Signal     : %d dBm\n", WiFi.RSSI());
     Serial.println(F("  Cloud      : ONLINE — Firebase operations active!"));
-    Serial.println(F("  Remote     : You can now operate the tank from anywhere."));
     Serial.println(F("========================================================="));
     alertMgr.triggerChirp(120);
   } else {
     wl_status_t st = WiFi.status();
     Serial.println(F("========================================================="));
-    Serial.println(F("  >>> [Wi-Fi] HOTSPOT NOT DETECTED / CONNECT FAILED <<<"));
+    Serial.println(F("  >>> [Wi-Fi] HOTSPOT NOT DETECTED / STANDALONE LOCAL <<<"));
     Serial.printf("  Target SSID: %s\n", WIFI_SSID);
     Serial.printf("  Status     : %s (Code: %d)\n", getWifiStatusName(st), (int)st);
     Serial.println(F("  Cloud      : PAUSED (Requires Wi-Fi hotspot connection)"));
-    Serial.println(F("  Action     : FALLING BACK TO LOCAL SERVICES"));
-    Serial.printf("  Local AP   : %s (Pass: %s)\n", apSsid, apPass);
-    Serial.println(F("  Dashboard  : http://192.168.4.1"));
-    Serial.println(F("  Background : ESP will keep retrying Wi-Fi automatically."));
+    Serial.println(F("  Action     : LOCAL DASHBOARD READY at http://192.168.4.1"));
     Serial.println(F("========================================================="));
     alertMgr.triggerChirp(300);
   }
 
-  Serial.println(F("[System] Hybrid Engine active: Local AP + Cloud Gateway."));
-  Serial.println(F("[Tip] Type 'LOCAL', 'FLEET', 'STATUS', 'SET_TANK <id>', or 'RESET_CONFIG' in Serial."));
+  Serial.println(F("[System] Ready. Type 'HELP' in Serial to see commands."));
 }
 
 void loop() {
   uint32_t now = millis();
 
-  // 1. Periodic Sensor Acquisition (~200ms)
+  // 1. Periodic Sensor Acquisition (~200ms non-blocking)
+  static float recentPeakFlowLpm = 0.0f;
   if (now - lastSensorUpdateMs >= 200) {
     uint32_t delta = now - lastSensorUpdateMs;
     lastSensorUpdateMs = now;
 
     ultrasonic.measure();
     flowSensor.update(delta);
-    currentSensor.measureRmsCurrent(30);
+    if (flowSensor.getFlowRateLpm() > recentPeakFlowLpm) {
+      recentPeakFlowLpm = flowSensor.getFlowRateLpm();
+    }
+    currentSensor.measureDcCurrent(32);
+    waterProbe.update();
   }
 
   bool levelValid = ultrasonic.isReadingValid();
@@ -204,9 +237,13 @@ void loop() {
   float flowRateLpm = flowSensor.getFlowRateLpm();
   float totalLitres = flowSensor.getTotalLitres();
   float pumpCurrentA = currentSensor.getLastCurrentA();
+  int rawAdc = currentSensor.getLastRawAdc();
+  bool probeDetected = waterProbe.isWaterDetected();
+  uint32_t flowPulses = flowSensor.getCumulativePulses();
 
   // 2. Local Autonomous Pump Safety Controller (No cloud or router dependency)
-  pumpController.update(now, levelPercent, levelValid, flowRateLpm, pumpCurrentA, levelStale);
+  pumpController.update(now, levelPercent, levelValid, flowRateLpm, pumpCurrentA, levelStale,
+                        probeDetected, SmartTank::WATER_PROBE_IS_OVERFLOW_INTERLOCK);
 
   bool isPumpRunning = pumpController.isPumpRunning();
   SmartTank::SafetyLockout currentLockout = pumpController.getLockout();
@@ -222,6 +259,9 @@ void loop() {
   pkt.flowRateLpm = flowRateLpm;
   pkt.totalLitres = totalLitres;
   pkt.pumpCurrentA = pumpCurrentA;
+  pkt.rawAdc = rawAdc;
+  pkt.waterProbeDetected = probeDetected;
+  pkt.flowPulses = flowPulses;
   pkt.pumpState = pumpController.getPumpStateString();
   pkt.controlMode = pumpController.getModeString();
   pkt.controllerStatus = pumpController.getStateString();
@@ -240,77 +280,45 @@ void loop() {
   localServer.handleClient(now, pumpController, pkt);
 
   // 6. Cloud Firebase: Push telemetry + Poll remote commands
-  // When a local phone client is actively connected at http://192.168.4.1,
-  // debounce cloud HTTPS calls to ensure ultra-low-latency (<20ms) local dashboard responses.
   if (!localServer.hasRecentClient() || (now % 4 == 0)) {
     firebaseClient.update(now, pumpController, pkt);
   }
 
-  // 7. Periodic Telemetry Stream (~2s)
+  // 7. Periodic Sensor Diagnostics Stream (~2s)
   if (now - lastSerialLogMs >= 2000) {
     lastSerialLogMs = now;
-    if (wifiConnected && !localServer.hasRecentClient()) {
-      // 1. Cloud Multi-Tank Fleet Mode (When Wi-Fi is connected and no active local dashboard session)
-      Serial.println(F("┌─────────────────────── MULTI-TANK FLEET STATUS ───────────────────────┐"));
-      Serial.printf(  "│  Wi-Fi: ONLINE (%-15s | %-4d dBm)  |  Cloud Sync: ACTIVE      │\n",
-        WiFi.localIP().toString().c_str(), WiFi.RSSI());
-      Serial.println(F("├─────────┬─────────┬──────────┬──────────┬────────┬──────────┬──────────┤"));
-      Serial.println(F("│ Tank ID │ Level   │ Flow     │ Current  │ Relay  │ Mode     │ Status   │"));
-      Serial.println(F("├─────────┼─────────┼──────────┼──────────┼────────┼──────────┼──────────┤"));
-      for (size_t i = 0; i < firebaseClient.getTankCount(); i++) {
-        const auto& t = firebaseClient.getTank(i);
-        const char* pumpStr = (i == 0) ? pumpController.getPumpStateString() : t.pumpState.c_str();
-        const char* statusStr = (i == 0) ? pumpController.getStateString() : t.status.c_str();
-        float lvl = (t.levelPercent >= 0.0f) ? t.levelPercent : 78.5f;
 
-        Serial.printf("│ %-7s │ %5.1f %% │ %4.1f L/m │ %4.2f A   │ %-6s │ %-8s │ %-8s │\n",
-          t.id.c_str(),
-          lvl,
-          t.flowRateLpm,
-          t.pumpCurrentA,
-          pumpStr,
-          t.mode.c_str(),
-          statusStr
-        );
-      }
-      Serial.println(F("└─────────┴─────────┴──────────┴──────────┴────────┴──────────┴──────────┘"));
-    } else {
-      // 2. Dedicated Single-Tank Local Service Mode (Direct Local AP Operation)
-      float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 78.5f;
-      float dispDistance = (distanceCm >= 0.0f) ? distanceCm : 18.2f;
-      float dispFlow = (flowRateLpm > 0.0f || !pumpController.isPumpRunning()) ? flowRateLpm : 14.2f;
-      float dispCurrent = (pumpCurrentA > 0.0f || !pumpController.isPumpRunning()) ? pumpCurrentA : 2.50f;
-      float dispLitres = (totalLitres > 0.0f) ? totalLitres : 342.80f;
+    float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 0.0f;
+    float dispDistance = (distanceCm >= 0.0f) ? distanceCm : 0.0f;
+    const char* sonicStatus = ultrasonic.getStatusString();
 
-      int clientCount = WiFi.softAPgetStationNum();
-      const char* netDesc = wifiConnected
-        ? "LOCAL DASHBOARD ACTIVE (Station Wi-Fi online)"
-        : "STANDALONE LOCAL AP (Hotspot disconnected)";
-
-      Serial.println(F("┌────────────────────── LOCAL TANK SERVICE MONITOR ─────────────────────┐"));
-      Serial.printf(  "│  Target Tank    : %-51s │\n", activeConfig.tankId);
-      Serial.printf(  "│  Local Access   : http://192.168.4.1 (SSID: SmartWaterTank)           │\n");
-      Serial.printf(  "│  SoftAP Clients : %d client(s) currently connected                     │\n", clientCount);
-      Serial.printf(  "│  Operation Mode : %-51s │\n", netDesc);
-      Serial.println(F("├───────────────────────────────────────────────────────────────────────┤"));
-      Serial.printf(  "│  Water Level    : %5.1f %%  (Distance: %4.1f cm)                         │\n",
-        dispLevel, dispDistance);
-      Serial.printf(  "│  Flow Rate      : %5.1f L/min (Total Volume: %7.2f L)                 │\n",
-        dispFlow, dispLitres);
-      Serial.printf(  "│  Motor Current  : %5.2f A    (Est. Power: ~%4.0f W)                      │\n",
-        dispCurrent, dispCurrent * 230.0f);
-      Serial.printf(  "│  Physical Relay : %-6s   (Control Mode: %-8s)                      │\n",
-        pumpController.getPumpStateString(), pumpController.getModeString());
-      Serial.printf(  "│  State Machine  : %-51s │\n",
-        pumpController.getStateString());
-      Serial.printf(  "│  Safety Lockout : %-51s │\n",
-        pumpController.getLockoutString());
-      Serial.println(F("└───────────────────────────────────────────────────────────────────────┘"));
-    }
+    Serial.println(F("┌────────────────────── SENSOR DIAGNOSTICS MONITOR ─────────────────────┐"));
+    Serial.printf(  "│  Active Tank     : %-51s │\n", activeConfig.tankId[0] ? activeConfig.tankId : TANK_ID);
+    Serial.printf(  "│  Network Mode    : %-51s │\n",
+      wifiConnected ? "CLOUD ONLINE + LOCAL AP (192.168.4.1)" : "STANDALONE LOCAL AP (http://192.168.4.1)");
+    Serial.println(F("├───────────────────────────────────────────────────────────────────────┤"));
+    Serial.printf(  "│  [1] Ultrasonic  : %5.1f %%  (Dist: %5.1f cm | Status: %-13s)    │\n",
+      dispLevel, dispDistance, sonicStatus);
+    Serial.printf(  "│  [2] Flow Sensor : %5.1f L/min (Peak: %4.1f | Pulses: %-5lu | Vol: %5.2f L) │\n",
+      flowRateLpm, recentPeakFlowLpm, (unsigned long)flowPulses, totalLitres);
+    recentPeakFlowLpm = flowRateLpm; // Reset peak window for next 2-second cycle
+    Serial.printf(  "│  [3] Water Probe : %-14s (D7 Pin: %-4s | Active-LOW: %-3s)     │\n",
+      waterProbe.getStatusString(),
+      waterProbe.getRawPinState() == LOW ? "LOW" : "HIGH",
+      waterProbe.isActiveLow() ? "YES" : "NO");
+    Serial.printf(  "│  [4] ACS712 (A0) : %5.2f A    (Raw ADC: %-4d | Zero: %4.0f mV)         │\n",
+      pumpCurrentA, rawAdc, currentSensor.getZeroOffsetMv());
+    Serial.printf(  "│  [5] Relay (D6)  : %-4s     (Active-%-4s | Mode: %-6s)              │\n",
+      pumpController.getPumpStateString(),
+      relay.isActiveLow() ? "LOW " : "HIGH",
+      pumpController.getModeString());
+    Serial.printf(  "│  [6] State/Lock  : %-15s (Lockout: %-18s) │\n",
+      pumpController.getStateString(), pumpController.getLockoutString());
+    Serial.println(F("└───────────────────────────────────────────────────────────────────────┘"));
   }
 
   // 8. Check Hardware Flash Button for Runtime Reset (Hold for 5s)
-  if (digitalRead(0) == LOW) {
+  if (digitalRead(SmartTank::PIN_BUTTON_FLASH) == LOW) {
     if (flashBtnPressMs == 0) {
       flashBtnPressMs = now;
     } else if (now - flashBtnPressMs >= 5000) {
@@ -324,97 +332,177 @@ void loop() {
     flashBtnPressMs = 0;
   }
 
-  // 9. Serial Console Commands for Rapid Desk Testing
+  // 9. Serial Console Commands for Rapid Bench Testing
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
 
-    if (cmd.startsWith("SET_TANK ")) {
-      String newTank = cmd.substring(9);
-      newTank.trim();
-      if (newTank.length() > 0) {
-        strncpy(activeConfig.tankId, newTank.c_str(), sizeof(activeConfig.tankId) - 1);
-        SmartTank::ConfigManager::save(activeConfig);
-        firebaseClient.setTankId(newTank);
-        localServer.begin(activeConfig.tankId);
-        Serial.printf("[Config] Switched active tank target to: %s\n", newTank.c_str());
-        alertMgr.triggerChirp(100);
-      }
-    } else if (cmd == "RESET_CONFIG") {
-      Serial.println(F("[Config] Resetting config to defaults and rebooting..."));
-      SmartTank::ConfigManager::resetToDefaults();
-      delay(500);
-      ESP.restart();
-    } else if (cmd == "PUMP ON" || cmd == "PUMP_ON" || cmd == "START" || cmd == "ON") {
+    if (cmd == "RELAY ON" || cmd == "PUMP ON" || cmd == "START" || cmd == "ON") {
       pumpController.requestMode(SmartTank::ControlMode::MANUAL, now);
       SmartTank::CommandResult res = pumpController.requestManualPump(true, now);
       Serial.println();
       Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
-      Serial.printf(  "║   ⚡ SERIAL COMMAND: PUMP START REQUESTED                            ║\n");
+      Serial.printf(  "║   ⚡ RELAY COMMAND: ENERGIZE (TEST CLICK)                            ║\n");
       Serial.printf(  "║   Result         : %-49s ║\n", res.accepted ? "ACCEPTED & EXECUTED" : (res.reason ? res.reason : "BLOCKED"));
       Serial.printf(  "║   Physical Relay : %-49s ║\n", pumpController.getPumpStateString());
       Serial.printf(  "║   Control Mode   : %-49s ║\n", pumpController.getModeString());
       Serial.printf(  "║   State Machine  : %-49s ║\n", pumpController.getStateString());
       Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
       alertMgr.triggerChirp(80);
-      lastSerialLogMs = 0; // Force immediate telemetry print
-    } else if (cmd == "PUMP OFF" || cmd == "PUMP_OFF" || cmd == "STOP" || cmd == "OFF") {
+      lastSerialLogMs = 0;
+    } else if (cmd == "RELAY OFF" || cmd == "PUMP OFF" || cmd == "STOP" || cmd == "OFF") {
       pumpController.requestMode(SmartTank::ControlMode::MANUAL, now);
       SmartTank::CommandResult res = pumpController.requestManualPump(false, now);
       Serial.println();
       Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
-      Serial.printf(  "║   🛑 SERIAL COMMAND: PUMP STOP REQUESTED                             ║\n");
+      Serial.printf(  "║   🛑 RELAY COMMAND: DE-ENERGIZE (OFF)                                ║\n");
       Serial.printf(  "║   Result         : %-49s ║\n", res.accepted ? "ACCEPTED & EXECUTED" : (res.reason ? res.reason : "BLOCKED"));
       Serial.printf(  "║   Physical Relay : %-49s ║\n", pumpController.getPumpStateString());
       Serial.printf(  "║   Control Mode   : %-49s ║\n", pumpController.getModeString());
       Serial.printf(  "║   State Machine  : %-49s ║\n", pumpController.getStateString());
       Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
       alertMgr.triggerChirp(80);
-      lastSerialLogMs = 0; // Force immediate telemetry print
+      lastSerialLogMs = 0;
+    } else if (cmd == "CLICK" || cmd == "TEST_RELAY") {
+      // Direct relay hardware actuation test for 1000ms (bypasses tank interlocks for coil diagnostics)
+      Serial.println(F("\n[Hardware Test] Actuating Relay coil directly for 1000ms on D6..."));
+      relay.setPump(true);
+      alertMgr.triggerChirp(80);
+      delay(1000);
+      relay.setPump(false);
+      alertMgr.triggerChirp(80);
+      Serial.println(F("[Hardware Test] Relay returned to safe de-energized state.\n"));
+      lastSerialLogMs = 0;
     } else if (cmd == "AUTO") {
       pumpController.requestMode(SmartTank::ControlMode::AUTO, now);
-      Serial.println(F("\n[Serial Command] >>> Control Mode switched to AUTO <<<\n"));
+      Serial.println(F("\n[Serial Command] >>> Control Mode switched to AUTO (Hysteresis Active) <<<\n"));
       alertMgr.triggerChirp(80);
       lastSerialLogMs = 0;
     } else if (cmd == "MANUAL") {
       pumpController.requestMode(SmartTank::ControlMode::MANUAL, now);
-      Serial.println(F("\n[Serial Command] >>> Control Mode switched to MANUAL <<<\n"));
+      Serial.println(F("\n[Serial Command] >>> Control Mode switched to MANUAL (Pump Disabled) <<<\n"));
       alertMgr.triggerChirp(80);
       lastSerialLogMs = 0;
-    } else if (cmd == "HELP" || cmd == "?") {
-      Serial.println(F("\n==================== SERIAL CONSOLE HELP ===================="));
-      Serial.println(F("  PUMP ON   / START  - Switch to MANUAL and actuate relay ON"));
-      Serial.println(F("  PUMP OFF  / STOP   - Switch to MANUAL and actuate relay OFF"));
-      Serial.println(F("  AUTO               - Switch to Autonomous interlock mode"));
-      Serial.println(F("  MANUAL             - Switch to Manual operator control"));
-      Serial.println(F("  LOCAL              - Display instant local sensor monitor"));
-      Serial.println(F("  STATUS / FLEET     - Display Wi-Fi connection and tank list"));
-      Serial.println(F("  SET_TANK <id>      - Switch active tank target (e.g. SET_TANK tank-01)"));
-      Serial.println(F("  RESET_CONFIG       - Erase stored EEPROM and reset to defaults"));
-      Serial.println(F("=============================================================\n"));
-    } else if (cmd == "LOCAL") {
-      float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 78.5f;
-      float dispDistance = (distanceCm >= 0.0f) ? distanceCm : 18.2f;
-      float dispFlow = (flowRateLpm > 0.0f || !pumpController.isPumpRunning()) ? flowRateLpm : 14.2f;
-      float dispCurrent = (pumpCurrentA > 0.0f || !pumpController.isPumpRunning()) ? pumpCurrentA : 2.50f;
-      float dispLitres = (totalLitres > 0.0f) ? totalLitres : 342.80f;
+    } else if (cmd == "PROBE") {
+      waterProbe.update();
+      Serial.println(F("\n================= WATER-LEVEL PROBE DIAGNOSTIC ================="));
+      Serial.printf("  DO Pin         : NodeMCU D7 / GPIO13\n");
+      Serial.printf("  Raw Pin Level  : %s\n", waterProbe.getRawPinState() == LOW ? "LOW (0V)" : "HIGH (3.3V)");
+      Serial.printf("  Config Polarity: %s\n", waterProbe.isActiveLow() ? "Active-LOW (LOW = Water Detected)" : "Active-HIGH");
+      Serial.printf("  Current Status : %s\n", waterProbe.getStatusString());
+      Serial.println(F("================================================================\n"));
+    } else if (cmd == "PROBE_POLARITY_LOW") {
+      waterProbe.setActiveLow(true);
+      Serial.println(F("[Config] Water-level probe polarity set to Active-LOW (default)."));
+    } else if (cmd == "PROBE_POLARITY_HIGH") {
+      waterProbe.setActiveLow(false);
+      Serial.println(F("[Config] Water-level probe polarity set to Active-HIGH."));
+    } else if (cmd == "RELAY_POLARITY_LOW") {
+      relay.setActiveLow(true);
+      Serial.println(F("[Config] Relay module polarity set to Active-LOW (default: LOW = Relay ON)."));
+    } else if (cmd == "RELAY_POLARITY_HIGH") {
+      relay.setActiveLow(false);
+      Serial.println(F("[Config] Relay module polarity set to Active-HIGH (HIGH = Relay ON)."));
+    } else if (cmd == "CAL_ZERO") {
+      Serial.println(F("[Hardware] Recalibrating ACS712 zero offset at current no-load condition..."));
+      currentSensor.calibrateZero();
+      Serial.printf("  -> New Zero Offset: %d ADC counts (~%.1f mV)\n",
+        currentSensor.getLastRawAdc(), currentSensor.getZeroOffsetMv());
+    } else if (cmd == "SONIC" || cmd == "ECHO") {
+      Serial.println(F("\n================ ULTRASONIC HARDWARE DIAGNOSTIC ================"));
+      Serial.printf("  Trig Pin (Output)    : NodeMCU D1 / GPIO %d\n", SmartTank::PIN_ULTRASONIC_TRIG);
+      Serial.printf("  Echo Pin (Input)     : NodeMCU D2 / GPIO %d\n", SmartTank::PIN_ULTRASONIC_ECHO);
+      
+      int idleEcho = digitalRead(SmartTank::PIN_ULTRASONIC_ECHO);
+      Serial.printf("  Echo Pin Idle State  : %s\n", idleEcho == HIGH ? "HIGH (Warning: Pin is stuck HIGH!)" : "LOW (Normal)");
 
-      Serial.println(F("\n┌────────────────────── LOCAL TANK SERVICE MONITOR ─────────────────────┐"));
-      Serial.printf(  "│  Target Tank    : %-51s │\n", activeConfig.tankId);
-      Serial.printf(  "│  Local Access   : http://192.168.4.1 (SSID: SmartWaterTank)           │\n");
-      Serial.printf(  "│  SoftAP Clients : %d client(s) currently connected                     │\n", WiFi.softAPgetStationNum());
-      Serial.printf(  "│  Operation Mode : %-51s │\n", wifiConnected ? "LOCAL (Station Wi-Fi online)" : "STANDALONE LOCAL AP (Offline)");
-      Serial.println(F("├───────────────────────────────────────────────────────────────────────┤"));
-      Serial.printf(  "│  Water Level    : %5.1f %%  (Distance: %4.1f cm)                         │\n", dispLevel, dispDistance);
-      Serial.printf(  "│  Flow Rate      : %5.1f L/min (Total Volume: %7.2f L)                 │\n", dispFlow, dispLitres);
-      Serial.printf(  "│  Motor Current  : %5.2f A    (Est. Power: ~%4.0f W)                      │\n", dispCurrent, dispCurrent * 230.0f);
-      Serial.printf(  "│  Physical Relay : %-6s   (Control Mode: %-8s)                      │\n", pumpController.getPumpStateString(), pumpController.getModeString());
-      Serial.printf(  "│  State Machine  : %-51s │\n", pumpController.getStateString());
-      Serial.printf(  "│  Safety Lockout : %-51s │\n", pumpController.getLockoutString());
-      Serial.println(F("└───────────────────────────────────────────────────────────────────────┘\n"));
+      // Send 10µs trigger pulse
+      digitalWrite(SmartTank::PIN_ULTRASONIC_TRIG, LOW);
+      delayMicroseconds(4);
+      digitalWrite(SmartTank::PIN_ULTRASONIC_TRIG, HIGH);
+      delayMicroseconds(10);
+      digitalWrite(SmartTank::PIN_ULTRASONIC_TRIG, LOW);
+
+      unsigned long dur = pulseIn(SmartTank::PIN_ULTRASONIC_ECHO, HIGH, 35000);
+      Serial.printf("  Pulse Return Duration: %lu us\n", dur);
+      if (dur > 0) {
+        float dist = (dur * 0.0343f) / 2.0f;
+        Serial.printf("  >>> SUCCESS! Distance: %.1f cm <<<\n", dist);
+      } else {
+        if (idleEcho == HIGH) {
+          Serial.println(F("  FAIL: Echo pin is stuck HIGH. Check resistor wiring."));
+        } else {
+          Serial.println(F("  FAIL: No pulse received (0 us)."));
+          Serial.println(F("        1. Check that HC-SR04 VCC is connected to NodeMCU VIN / 5V rail."));
+          Serial.println(F("        2. Check that HC-SR04 GND is connected to NodeMCU GND."));
+          Serial.println(F("        3. Check if TRIG (D1) and ECHO (D2) wires are swapped."));
+        }
+      }
+      Serial.println(F("================================================================\n"));
+    } else if (cmd == "FLOW") {
+      Serial.println(F("\n================= FLOW SENSOR DIAGNOSTIC ================="));
+      Serial.printf("  Signal Pin (Input)   : NodeMCU D5 / GPIO %d\n", SmartTank::PIN_FLOW_SENSOR);
+      Serial.printf("  Current Flow Rate    : %.2f L/min\n", flowSensor.getFlowRateLpm());
+      Serial.printf("  Recent Peak Flow     : %.2f L/min\n", recentPeakFlowLpm);
+      Serial.printf("  Cumulative Pulses    : %lu pulses\n", (unsigned long)flowSensor.getCumulativePulses());
+      Serial.printf("  Total Volume (Litres): %.2f L\n", flowSensor.getTotalLitres());
+      Serial.printf("  Calibration Constant : %.1f pulses/Litre\n", flowSensor.getCalibration());
+      Serial.println(F("==========================================================\n"));
+    } else if (cmd.startsWith("BEEP") || cmd.startsWith("BUZZER")) {
+      uint16_t duration = 1000; // 1-second loud beep
+      if (cmd.indexOf(' ') > 0) {
+        int parsed = cmd.substring(cmd.indexOf(' ') + 1).toInt();
+        if (parsed > 0) {
+          duration = (parsed <= 10) ? (parsed * 1000) : parsed;
+        }
+      }
+      Serial.printf("\n[Hardware Test] Playing LOUD %d ms audio alert tone on D0 (2.5 kHz resonant square-wave)...\n", duration);
+      alertMgr.playTone(2500, duration);
+      Serial.println(F("[Hardware Test] Buzzer test completed.\n"));
+    } else if (cmd == "RESET_FLOW") {
+      flowSensor.resetTotalLitres();
+      recentPeakFlowLpm = 0.0f;
+      Serial.println(F("[Flow] Volume and pulse counter reset to 0."));
+    } else if (cmd == "HELP" || cmd == "?") {
+      Serial.println(F("\n==================== BENCH TEST SERIAL CONSOLE ===================="));
+      Serial.println(F("  RELAY ON  / PUMP ON   - Switch to MANUAL and actuate relay ON (listen for click)"));
+      Serial.println(F("  RELAY OFF / PUMP OFF  - Switch to MANUAL and de-energize relay OFF"));
+      Serial.println(F("  CLICK                 - Safe 500ms momentary relay click test"));
+      Serial.println(F("  AUTO                  - Enable autonomous hysteresis control (20%-95%)"));
+      Serial.println(F("  MANUAL                - Disable automatic pumping (safe bench state)"));
+      Serial.println(F("  PROBE                 - Read D7 water-level probe comparator status"));
+      Serial.println(F("  PROBE_POLARITY_LOW    - Set probe logic to Active-LOW (default)"));
+      Serial.println(F("  PROBE_POLARITY_HIGH   - Set probe logic to Active-HIGH"));
+      Serial.println(F("  RELAY_POLARITY_LOW    - Set relay logic to Active-LOW (default)"));
+      Serial.println(F("  RELAY_POLARITY_HIGH   - Set relay logic to Active-HIGH"));
+      Serial.println(F("  FLOW                  - Print instantaneous, peak, and cumulative flow stats"));
+      Serial.println(F("  RESET_FLOW            - Reset flow pulse counter and total volume to 0"));
+      Serial.println(F("  CAL_ZERO              - Recalibrate ACS712 current zero-offset baseline"));
+      Serial.println(F("  BEEP / BUZZER         - Trigger 300ms audio test chirp on D0 buzzer"));
+      Serial.println(F("  SONIC                 - Diagnostic pulse test for ultrasonic sensor"));
+      Serial.println(F("  LOCAL                 - Print instant sensor diagnostics banner"));
+      Serial.println(F("  STATUS / FLEET        - Print Wi-Fi and Firebase cloud sync status"));
+      Serial.println(F("  SET_TANK <id>         - Switch active tank target (e.g. SET_TANK tank-01)"));
+      Serial.println(F("  SET_WIFI <ssid> <pwd> - Connect to specific Wi-Fi hotspot"));
+      Serial.println(F("  RESET_CONFIG          - Clear EEPROM and reboot to Setup Portal"));
+      Serial.println(F("===================================================================\n"));
+    } else if (cmd.startsWith("SET_WIFI")) {
+      int firstSpace = cmd.indexOf(' ');
+      int secondSpace = cmd.indexOf(' ', firstSpace + 1);
+      if (firstSpace > 0 && secondSpace > 0) {
+        String newSsid = cmd.substring(firstSpace + 1, secondSpace);
+        String newPass = cmd.substring(secondSpace + 1);
+        newSsid.trim(); newPass.trim();
+        Serial.printf("\n[Wi-Fi] Initiating connection to '%s'...\n", newSsid.c_str());
+        firebaseClient.begin(newSsid, newPass);
+      } else {
+        Serial.println(F("\nUsage: SET_WIFI <ssid> <password>\n"));
+      }
+    } else if (cmd == "LOCAL") {
+      lastSerialLogMs = 0;
     } else if (cmd == "STATUS" || cmd == "WIFI" || cmd == "FLEET") {
       wl_status_t st = WiFi.status();
-      Serial.println(F("\n==================== MULTI-TANK FLEET STATUS ===================="));
+      Serial.println(F("\n==================== SYSTEM & FLEET STATUS ===================="));
       Serial.printf("  Hotspot SSID   : %s\n", WIFI_SSID);
       Serial.printf("  Wi-Fi Status   : %s (Code: %d)\n", getWifiStatusName(st), (int)st);
       Serial.printf("  Station IP     : %s (Signal: %d dBm)\n",
@@ -422,18 +510,18 @@ void loop() {
         (st == WL_CONNECTED) ? WiFi.RSSI() : 0);
       Serial.printf("  Cloud Gateway  : %s\n", (st == WL_CONNECTED) ? "ONLINE (Active)" : "OFFLINE (Paused)");
       Serial.printf("  Local AP URL   : http://192.168.4.1 (SSID: SmartWaterTank)\n");
-      Serial.printf("  Physical Relay : %s\n", pumpController.getPumpStateString());
+      Serial.printf("  Physical Relay : %s (D6 / GPIO12)\n", pumpController.getPumpStateString());
       Serial.println(F(" ---------------------------------------------------------------"));
       Serial.println(F("  Managed Tanks:"));
       for (size_t i = 0; i < firebaseClient.getTankCount(); i++) {
         const auto& t = firebaseClient.getTank(i);
         Serial.printf("  [%s] Mode: %-6s | Pump: %-4s | Level: %5.1f%% | Status: %s\n",
           t.id.c_str(), t.mode.c_str(), t.pumpState.c_str(),
-          (t.levelPercent >= 0.0f) ? t.levelPercent : 78.5f,
+          (t.levelPercent >= 0.0f) ? t.levelPercent : 0.0f,
           t.status.c_str()
         );
       }
-      Serial.println(F("=================================================================\n"));
+      Serial.println(F("================================================================\n"));
     }
   }
 

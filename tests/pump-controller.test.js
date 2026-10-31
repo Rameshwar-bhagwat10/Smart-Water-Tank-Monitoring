@@ -540,5 +540,195 @@ describe('Pump Controller & Autonomous Safety Interlocks', () => {
       assert.strictEqual(sm.state, ControllerState.IDLE);
     });
   });
+
+  describe('Hardware Interlocks: High-Water Probe, Startup Safety & Dry-Run Bypass', () => {
+    class EnhancedPumpController {
+      constructor(options = {}) {
+        this.lowThreshold = 20.0;
+        this.highThreshold = 95.0;
+        this.relayActiveLow = true;
+        this.dryRunEnabled = options.dryRunEnabled ?? false;
+        this.dryRunGraceMs = 5000;
+        this.dryRunTripMs = 5000;
+        this.probeIsOverflowInterlock = options.probeIsOverflowInterlock ?? true;
+
+        this.mode = options.startupMode || ControlMode.MANUAL;
+        this.pumpState = PumpState.OFF;
+        this.relayPinState = this.relayActiveLow ? 1 : 0; // 1 = HIGH (de-energized for active-LOW relay)
+        this.lockout = SafetyLockout.NONE;
+        this.pumpStartMs = 0;
+        this.zeroFlowStartMs = 0;
+        this.lastLevelPct = 50.0;
+        this.lastLevelValid = true;
+        this.isProbeWet = false;
+      }
+
+      setRelay(state) {
+        this.pumpState = state;
+        this.relayPinState = state === PumpState.ON ? (this.relayActiveLow ? 0 : 1) : (this.relayActiveLow ? 1 : 0);
+      }
+
+      update(nowMs, levelPercent, isLevelValid, flowRateLpm, isStale, isProbeWet) {
+        this.lastLevelPct = levelPercent;
+        this.lastLevelValid = isLevelValid && !isStale;
+        this.isProbeWet = isProbeWet;
+
+        // 0. High-water contact probe interlock
+        if (this.probeIsOverflowInterlock && isProbeWet) {
+          this.setRelay(PumpState.OFF);
+          this.lockout = 'OVERFLOW_PROBE_TRIPPED';
+          return;
+        } else if (this.lockout === 'OVERFLOW_PROBE_TRIPPED' && !isProbeWet) {
+          this.lockout = SafetyLockout.NONE;
+        }
+
+        // 1. Critical Sensor Fault
+        if (!isLevelValid || isStale) {
+          if (this.mode === ControlMode.AUTO) {
+            this.setRelay(PumpState.OFF);
+            this.lockout = SafetyLockout.SENSOR_FAULT;
+            return;
+          }
+        }
+
+        // 2. High water cutoff
+        if (this.lastLevelValid && levelPercent >= this.highThreshold) {
+          this.setRelay(PumpState.OFF);
+          this.lockout = SafetyLockout.HIGH_LEVEL;
+          return;
+        }
+
+        // 3. Dry-run zero-flow detection (only when dryRunEnabled is true)
+        if (this.pumpState === PumpState.ON && this.dryRunEnabled) {
+          const runDuration = nowMs - this.pumpStartMs;
+          if (runDuration > this.dryRunGraceMs) {
+            if (flowRateLpm <= 0.2) {
+              if (this.zeroFlowStartMs === 0) {
+                this.zeroFlowStartMs = nowMs;
+              } else if (nowMs - this.zeroFlowStartMs >= this.dryRunTripMs) {
+                this.setRelay(PumpState.OFF);
+                this.lockout = SafetyLockout.DRY_RUN;
+                return;
+              }
+            } else {
+              this.zeroFlowStartMs = 0;
+            }
+          }
+        }
+
+        // AUTO hysteresis control
+        if (this.mode === ControlMode.AUTO && this.lockout === SafetyLockout.NONE) {
+          if (levelPercent <= this.lowThreshold && this.pumpState === PumpState.OFF) {
+            this.setRelay(PumpState.ON);
+            this.pumpStartMs = nowMs;
+          }
+        }
+      }
+
+      requestManualPump(pumpOn, nowMs) {
+        if (this.mode !== ControlMode.MANUAL) {
+          return { accepted: false, reason: 'NOT_IN_MANUAL_MODE' };
+        }
+        if (pumpOn) {
+          if (this.probeIsOverflowInterlock && this.isProbeWet) {
+            this.lockout = 'OVERFLOW_PROBE_TRIPPED';
+            return { accepted: false, reason: 'OVERFLOW_PROBE_TRIPPED' };
+          }
+          if (this.lastLevelValid && this.lastLevelPct >= this.highThreshold) {
+            this.lockout = SafetyLockout.HIGH_LEVEL;
+            return { accepted: false, reason: 'HIGH_LEVEL_CUTOFF' };
+          }
+          if (this.lockout !== SafetyLockout.NONE) {
+            return { accepted: false, reason: `LOCKED_OUT_${this.lockout}` };
+          }
+          this.setRelay(PumpState.ON);
+          this.pumpStartMs = nowMs;
+          return { accepted: true };
+        } else {
+          this.setRelay(PumpState.OFF);
+          return { accepted: true };
+        }
+      }
+    }
+
+    it('initializes relay in de-energized OFF state (relayPinState = HIGH for active-LOW)', () => {
+      const ctrl = new EnhancedPumpController();
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.relayPinState, 1); // HIGH = Relay OFF
+      assert.strictEqual(ctrl.mode, ControlMode.MANUAL);
+    });
+
+    it('forces relay OFF and sets OVERFLOW_PROBE_TRIPPED when high-water probe detects water in AUTO', () => {
+      const ctrl = new EnhancedPumpController();
+      ctrl.mode = ControlMode.AUTO;
+      // Start pump in AUTO
+      ctrl.update(1000, 15.0, true, 10.0, false, false);
+      assert.strictEqual(ctrl.pumpState, PumpState.ON);
+
+      // Probe detects water (e.g. ultrasonic was false reading or overflow reached)
+      ctrl.update(2000, 15.0, true, 10.0, false, true); // isProbeWet = true
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.lockout, 'OVERFLOW_PROBE_TRIPPED');
+    });
+
+    it('forces relay OFF when high-water probe detects water during MANUAL operation', () => {
+      const ctrl = new EnhancedPumpController();
+      ctrl.requestManualPump(true, 1000);
+      assert.strictEqual(ctrl.pumpState, PumpState.ON);
+
+      // Probe detects water during manual pumping
+      ctrl.update(2000, 60.0, true, 10.0, false, true); // isProbeWet = true
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.lockout, 'OVERFLOW_PROBE_TRIPPED');
+    });
+
+    it('blocks manual pump start if high-water probe is currently wet', () => {
+      const ctrl = new EnhancedPumpController();
+      ctrl.update(1000, 50.0, true, 0.0, false, true); // isProbeWet = true
+
+      const res = ctrl.requestManualPump(true, 1100);
+      assert.strictEqual(res.accepted, false);
+      assert.strictEqual(res.reason, 'OVERFLOW_PROBE_TRIPPED');
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+    });
+
+    it('does NOT trip dry-run lockout during bench testing when dryRunEnabled is false', () => {
+      // Pump disconnected bench test: flow is 0.0 L/min for 30 seconds
+      const ctrl = new EnhancedPumpController({ dryRunEnabled: false });
+      ctrl.mode = ControlMode.AUTO;
+      ctrl.update(1000, 15.0, true, 0.0, false, false); // pump ON
+      assert.strictEqual(ctrl.pumpState, PumpState.ON);
+
+      // Run with 0.0 flow past grace and trip times
+      ctrl.update(30000, 15.0, true, 0.0, false, false);
+      assert.strictEqual(ctrl.pumpState, PumpState.ON); // Remains ON, no dry run trip
+      assert.notStrictEqual(ctrl.lockout, SafetyLockout.DRY_RUN);
+    });
+
+    it('trips dry-run lockout when dryRunEnabled is true and zero flow persists past grace period', () => {
+      const ctrl = new EnhancedPumpController({ dryRunEnabled: true });
+      ctrl.mode = ControlMode.AUTO;
+      ctrl.update(1000, 15.0, true, 0.0, false, false); // pump ON
+      assert.strictEqual(ctrl.pumpState, PumpState.ON);
+
+      // Past grace period (5s) + trip period (5s) = 11s total
+      ctrl.update(7000, 15.0, true, 0.0, false, false); // zero flow starts
+      ctrl.update(13000, 15.0, true, 0.0, false, false); // zero flow tripped
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.lockout, SafetyLockout.DRY_RUN);
+    });
+
+    it('forces relay OFF when ultrasonic reading times out or becomes invalid in AUTO', () => {
+      const ctrl = new EnhancedPumpController();
+      ctrl.mode = ControlMode.AUTO;
+      ctrl.update(1000, 15.0, true, 10.0, false, false); // pump ON
+      assert.strictEqual(ctrl.pumpState, PumpState.ON);
+
+      // Sensor timeout (invalid reading)
+      ctrl.update(2000, -1.0, false, 10.0, false, false);
+      assert.strictEqual(ctrl.pumpState, PumpState.OFF);
+      assert.strictEqual(ctrl.lockout, SafetyLockout.SENSOR_FAULT);
+    });
+  });
 });
 

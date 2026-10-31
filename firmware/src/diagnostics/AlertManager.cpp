@@ -13,29 +13,45 @@ AlertManager::AlertManager(uint8_t greenLedPin, uint8_t yellowLedPin, uint8_t re
       _chirpEndMillis(0) {}
 
 void AlertManager::begin() {
-  pinMode(_greenLed, OUTPUT);
-  pinMode(_yellowLed, OUTPUT);
-  pinMode(_redLed, OUTPUT);
-  pinMode(_buzzer, OUTPUT);
-
-  digitalWrite(_greenLed, LOW);
-  digitalWrite(_yellowLed, LOW);
-  digitalWrite(_redLed, _redActiveLow ? HIGH : LOW);
-  digitalWrite(_buzzer, LOW);
+  if (_greenLed != 255) {
+    pinMode(_greenLed, OUTPUT);
+    digitalWrite(_greenLed, LOW);
+  }
+  if (_yellowLed != 255) {
+    pinMode(_yellowLed, OUTPUT);
+    digitalWrite(_yellowLed, LOW);
+  }
+  if (_redLed != 255) {
+    pinMode(_redLed, OUTPUT);
+    digitalWrite(_redLed, _redActiveLow ? HIGH : LOW);
+  }
+  if (_buzzer != 255) {
+    pinMode(_buzzer, OUTPUT);
+    digitalWrite(_buzzer, LOW);
+  }
 }
 
 void AlertManager::triggerChirp(uint16_t durationMs) {
-  digitalWrite(_buzzer, HIGH);
-  _chirpEndMillis = millis() + durationMs;
+  playTone(2700, durationMs);
+}
+
+void AlertManager::playTone(uint16_t frequencyHz, uint16_t durationMs) {
+  if (_buzzer == 255 || frequencyHz == 0) return;
+  uint32_t halfPeriodUs = 1000000UL / (frequencyHz * 2);
+  uint32_t cycles = (static_cast<uint32_t>(durationMs) * 1000UL) / (halfPeriodUs * 2);
+
+  for (uint32_t i = 0; i < cycles; ++i) {
+    digitalWrite(_buzzer, HIGH);
+    delayMicroseconds(halfPeriodUs);
+    digitalWrite(_buzzer, LOW);
+    delayMicroseconds(halfPeriodUs);
+    if ((i & 0x7F) == 0) {
+      ESP.wdtFeed();
+    }
+  }
 }
 
 void AlertManager::update(uint32_t currentMillis, bool wifiConnected, bool pumpRunning, SafetyLockout lockout) {
-  // Handle active chirp timer
-  if (_chirpEndMillis > 0 && currentMillis >= _chirpEndMillis) {
-    digitalWrite(_buzzer, LOW);
-    _chirpEndMillis = 0;
-  }
-
   // 500ms toggle for blink patterns
   if (currentMillis - _lastBlinkMillis >= 500) {
     _lastBlinkMillis = currentMillis;
@@ -43,25 +59,40 @@ void AlertManager::update(uint32_t currentMillis, bool wifiConnected, bool pumpR
   }
 
   // Green LED: Solid when Wi-Fi connected, blinking when connecting
-  if (wifiConnected) {
-    digitalWrite(_greenLed, HIGH);
-  } else {
-    digitalWrite(_greenLed, _blinkState ? HIGH : LOW);
+  if (_greenLed != 255) {
+    if (wifiConnected) {
+      digitalWrite(_greenLed, HIGH);
+    } else {
+      digitalWrite(_greenLed, _blinkState ? HIGH : LOW);
+    }
   }
 
   // Yellow LED: Solid when pump relay energized
-  digitalWrite(_yellowLed, pumpRunning ? HIGH : LOW);
+  if (_yellowLed != 255) {
+    digitalWrite(_yellowLed, pumpRunning ? HIGH : LOW);
+  }
 
   // Red LED & Buzzer: Active on Safety Lockouts
-  if (lockout != SafetyLockout::NONE) {
-    bool ledEnergized = _blinkState;
-    digitalWrite(_redLed, _redActiveLow ? (ledEnergized ? LOW : HIGH) : (ledEnergized ? HIGH : LOW));
-    // Beep buzzer intermittently on critical lockout
-    if (_chirpEndMillis == 0) {
-      digitalWrite(_buzzer, _blinkState ? HIGH : LOW);
+  if (_redLed != 255) {
+    if (lockout != SafetyLockout::NONE) {
+      bool ledEnergized = _blinkState;
+      digitalWrite(_redLed, _redActiveLow ? (ledEnergized ? LOW : HIGH) : (ledEnergized ? HIGH : LOW));
+    } else {
+      digitalWrite(_redLed, _redActiveLow ? HIGH : LOW);
     }
-  } else {
-    digitalWrite(_redLed, _redActiveLow ? HIGH : LOW);
+  }
+
+  // Buzzer beep intermittently on critical safety lockout
+  if (_buzzer != 255) {
+    if (lockout != SafetyLockout::NONE) {
+      if (_blinkState) {
+        playTone(2500, 40);
+      } else {
+        digitalWrite(_buzzer, LOW);
+      }
+    } else {
+      digitalWrite(_buzzer, LOW);
+    }
   }
 }
 

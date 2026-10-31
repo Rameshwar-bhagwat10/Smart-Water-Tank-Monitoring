@@ -162,12 +162,12 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
 
   <!-- Hero Water Tank Card -->
   <div class="cd hero">
-    <div class="tk"><div class="tf" id="tf" style="height:78.5%"></div></div>
+    <div class="tk"><div class="tf" id="tf" style="height:0%"></div></div>
     <div class="hd2">
       <span class="hl">Water Level</span>
-      <div class="hv"><span id="vl">78.5</span><span class="u">%</span></div>
-      <div class="hs">Distance: <b id="vd">18.2 cm</b></div>
-      <div class="tg tg-g" id="bs">Sensor Active</div>
+      <div class="hv"><span id="vl">--</span><span class="u">%</span></div>
+      <div class="hs">Distance: <b id="vd">-- cm</b></div>
+      <div class="tg tg-x" id="bs">Standby</div>
     </div>
   </div>
 
@@ -175,7 +175,7 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
   <div class="cd ch-wrap">
     <div class="ch-hd">
       <span class="ch-t">Water Level Trend</span>
-      <span class="ch-v" id="ch-lv">78.5 %</span>
+      <span class="ch-v" id="ch-lv">-- %</span>
     </div>
     <canvas id="cL" height="120"></canvas>
   </div>
@@ -184,22 +184,22 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
   <div class="grid">
     <div class="mb">
       <div class="mt"><span class="ml">Flow Rate</span><div class="mi ib">💧</div></div>
-      <div class="mv"><span id="vf">14.6</span> <span class="u">L/min</span></div>
-      <div class="ms">Total: <b id="vt">342.80</b> L</div>
+      <div class="mv"><span id="vf">0.0</span> <span class="u">L/min</span></div>
+      <div class="ms">Total: <b id="vt">0.00</b> L</div>
     </div>
     <div class="mb">
       <div class="mt"><span class="ml">Pump Current</span><div class="mi io">⚡</div></div>
-      <div class="mv"><span id="vc">2.65</span> <span class="u">A</span></div>
-      <div class="ms">ACS712 Sensor</div>
+      <div class="mv"><span id="vc">0.00</span> <span class="u">A</span></div>
+      <div class="ms">ACS712 A0 | Raw: <b id="va">--</b></div>
     </div>
     <div class="mb">
       <div class="mt"><span class="ml">Relay</span><div class="mi ig">🔌</div></div>
-      <div class="mv" style="margin-top:2px"><span id="vr" class="rp on">RUNNING</span></div>
-      <div class="ms">GPIO12 Relay</div>
+      <div class="mv" style="margin-top:2px"><span id="vr" class="rp off">OFF</span></div>
+      <div class="ms">D6 Pin | Probe: <b id="vp">DRY</b></div>
     </div>
     <div class="mb">
       <div class="mt"><span class="ml">State</span><div class="mi ip">🛡️</div></div>
-      <div class="mv" style="font-size:15px;margin-top:3px" id="vs">AUTO_FILLING</div>
+      <div class="mv" style="font-size:15px;margin-top:3px" id="vs">IDLE</div>
       <div class="ms">Autonomous Interlock</div>
     </div>
   </div>
@@ -208,7 +208,7 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
   <div class="cd ch-wrap">
     <div class="ch-hd">
       <span class="ch-t">Flow Rate Sparkline</span>
-      <span class="ch-v" id="ch-fv">14.6 L/min</span>
+      <span class="ch-v" id="ch-fv">0.0 L/min</span>
     </div>
     <canvas id="cF" height="80"></canvas>
   </div>
@@ -220,14 +220,14 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
       <div class="gauge-box">
         <canvas id="cG" width="104" height="104"></canvas>
         <div class="gauge-val">
-          <div class="gauge-num" id="gn">2.65</div>
+          <div class="gauge-num" id="gn">0.00</div>
           <div class="gauge-unit">Amps</div>
         </div>
       </div>
       <div class="gauge-info">
-        <div class="gi-row"><span class="gi-label">Peak</span><span class="gi-val" id="gp">2.85 A</span></div>
-        <div class="gi-row"><span class="gi-label">Average</span><span class="gi-val" id="ga">2.45 A</span></div>
-        <div class="gi-row"><span class="gi-label">Status</span><span class="gi-val" id="gs" style="color:var(--green)">Running</span></div>
+        <div class="gi-row"><span class="gi-label">Peak</span><span class="gi-val" id="gp">0.00 A</span></div>
+        <div class="gi-row"><span class="gi-label">Average</span><span class="gi-val" id="ga">0.00 A</span></div>
+        <div class="gi-row"><span class="gi-label">Status</span><span class="gi-val" id="gs" style="color:var(--green)">Idle</span></div>
       </div>
     </div>
   </div>
@@ -244,14 +244,14 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
       <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
     </div>
     <div class="fr">
-      <span>Status: <b id="ak">Auto Pumping</b></span>
-      <span id="st" style="font-size:10px;font-family:monospace">Response &lt; 20ms</span>
+      <span>Status: <b id="ak">Standby</b></span>
+      <span id="st" style="font-size:10px;font-family:monospace">Ready</span>
     </div>
   </div>
 
   <!-- Activity Timeline -->
   <div class="cd">
-    <div class="ch-hd"><span class="ch-t">Activity Log</span><span class="ch-v" id="tl-ct">4 events</span></div>
+    <div class="ch-hd"><span class="ch-t">Activity Log</span><span class="ch-v" id="tl-ct">0 events</span></div>
     <div class="tl" id="tl"></div>
   </div>
 
@@ -261,25 +261,20 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
     <div class="fl-r"><span>SSID</span><b>SmartWaterTank</b></div>
     <div class="fl-r"><span>IP</span><b>192.168.4.1</b></div>
     <div class="fl-r"><span>Hotspot Wi-Fi</span><b id="wf-st">Checking...</b></div>
-    <div class="fl-r"><span>Uptime</span><b id="vu">18m 42s</b></div>
+    <div class="fl-r"><span>Uptime</span><b id="vu">--</b></div>
     <div class="fl-r"><span>Refresh</span><b>600ms</b></div>
   </div>
 
 </div>
 
 <script>
-// -- Data history buffers (pre-populated with rich dummy data) --
+// -- Data history buffers (zero dummy data; dynamically populated from real sensors) --
 const MX=60;
-const lH=[68.0,69.5,70.8,72.0,73.5,72.8,74.2,75.5,76.8,76.2,77.4,78.1,78.5];
-const fH=[9.5,11.2,12.0,10.8,13.5,14.2,13.8,14.6,15.1,14.6];
-const cH=[2.20,2.35,2.40,2.55,2.60,2.65];
-let cM='AUTO',iS=false,pC=2.85,cS=14.75,cN=6,lastPump='ON',lastState='AUTO_FILLING';
-const evts=[
-  {msg:'Autonomous filling in progress',color:'#D4F63D',ts:'19:35:12'},
-  {msg:'Pump started (low threshold 20%)',color:'#D4F63D',ts:'19:32:04'},
-  {msg:'Ultrasonic sensor calibrated',color:'#3DF6D9',ts:'19:30:00'},
-  {msg:'Local dashboard connected',color:'#D4F63D',ts:'19:28:15'}
-];
+const lH=[];
+const fH=[];
+const cH=[];
+let cM='MANUAL',iS=false,pC=0.0,cS=0.0,cN=0,lastPump='OFF',lastState='IDLE';
+const evts=[];
 
 // -- Canvas setup helpers with instant width fallback --
 function dpr(){return window.devicePixelRatio||1;}
@@ -458,15 +453,15 @@ async function poll(){
     }
 
     // Flow
-    const fv=(d.flow>0.05)?d.flow:0;
-    document.getElementById('vf').innerText=fv>0.05?fv.toFixed(1):'--';
+    const fv=(d.flow!==undefined&&d.flow>=0)?d.flow:0;
+    document.getElementById('vf').innerText=fv.toFixed(1);
     document.getElementById('vt').innerText=(d.total||0).toFixed(2);
     fH.push(fv);if(fH.length>MX)fH.shift();
-    document.getElementById('ch-fv').innerText=fv>0.05?fv.toFixed(1)+' L/min':'-- L/min';
+    document.getElementById('ch-fv').innerText=fv.toFixed(1)+' L/min';
 
     // Current
-    const cv=(d.current>0.05)?d.current:0;
-    document.getElementById('vc').innerText=cv>0.05?cv.toFixed(2):'--';
+    const cv=(d.current!==undefined&&d.current>=0)?d.current:0;
+    document.getElementById('vc').innerText=cv.toFixed(2);
     cH.push(cv);if(cH.length>MX)cH.shift();
     if(cv>pC)pC=cv;
     cS+=cv;cN++;
@@ -478,6 +473,14 @@ async function poll(){
     else if(cv>0.1){gsEl.innerText='Running';gsEl.style.color='var(--orange)';}
     else{gsEl.innerText='Idle';gsEl.style.color='var(--green)';}
     drawGauge(cv);
+
+    // Water Probe DO & Raw ADC
+    const vp=document.getElementById('vp');
+    if(vp){
+      vp.innerHTML=d.waterProbe?'<span style="color:var(--red)">DETECTED</span>':'<span style="color:var(--green)">DRY</span>';
+    }
+    const va=document.getElementById('va');
+    if(va&&d.rawAdc!==undefined){va.innerText=d.rawAdc;}
 
     // Relay
     const rp=document.getElementById('vr');
@@ -586,7 +589,7 @@ async function sP(s){
 }
 
 // Instant 0ms Paint & Polling Loop
-function renderAll(){drawLevel();drawFlow();drawGauge(2.65);renderTL();}
+function renderAll(){drawLevel();drawFlow();drawGauge(0);renderTL();}
 window.addEventListener('resize',renderAll);
 requestAnimationFrame(renderAll);
 addEvt('Local dashboard connected','#D4F63D');
@@ -726,37 +729,22 @@ void LocalDashboardServer::handleApiLive() {
   const char* statusStr = _pumpCtrl ? _pumpCtrl->getStateString() : "Standby";
   const char* lockoutStr = _pumpCtrl ? _pumpCtrl->getLockoutString() : "NONE";
 
-  // Real Telemetry with graceful desk fallback
-  bool hasRealSensor = (_lastTelemetry && _lastTelemetry->isLevelValid && _lastTelemetry->levelPercent >= 0.0f);
-  float level = hasRealSensor ? _lastTelemetry->levelPercent : 78.5f;
-  float distance = hasRealSensor ? _lastTelemetry->distanceCm : 18.2f;
+  // 100% Real Transducer Telemetry (Zero dummy / mock fallback values)
+  bool hasRealSensor = (_lastTelemetry && _lastTelemetry->isLevelValid);
+  float level = (_lastTelemetry && _lastTelemetry->levelPercent >= 0.0f) ? _lastTelemetry->levelPercent : 0.0f;
+  float distance = (_lastTelemetry && _lastTelemetry->distanceCm >= 0.0f) ? _lastTelemetry->distanceCm : 0.0f;
+  float flow = (_lastTelemetry && _lastTelemetry->flowRateLpm >= 0.0f) ? _lastTelemetry->flowRateLpm : 0.0f;
+  float total = _lastTelemetry ? _lastTelemetry->totalLitres : 0.0f;
+  float current = (_lastTelemetry && _lastTelemetry->pumpCurrentA >= 0.0f) ? _lastTelemetry->pumpCurrentA : 0.0f;
+  bool waterProbe = _lastTelemetry ? _lastTelemetry->waterProbeDetected : false;
+  int rawAdc = _lastTelemetry ? _lastTelemetry->rawAdc : 0;
 
-  float flow = 0.0f;
-  float total = _lastTelemetry ? _lastTelemetry->totalLitres : 342.80f;
-  float current = 0.0f;
-
-  if (pumpRunning) {
-    // If pump is physically running: use sensor reading if available, or nominal running values for desk testing
-    if (_lastTelemetry && _lastTelemetry->flowRateLpm > 0.05f) {
-      flow = _lastTelemetry->flowRateLpm;
-    } else {
-      flow = 14.6f;
-    }
-    if (_lastTelemetry && _lastTelemetry->pumpCurrentA > 0.05f) {
-      current = _lastTelemetry->pumpCurrentA;
-    } else {
-      current = 2.65f;
-    }
-  } else {
-    // When pump is OFF: flow and motor current are strictly 0.00
-    flow = (_lastTelemetry && _lastTelemetry->flowRateLpm > 0.05f) ? _lastTelemetry->flowRateLpm : 0.0f;
-    current = (_lastTelemetry && _lastTelemetry->pumpCurrentA > 0.05f) ? _lastTelemetry->pumpCurrentA : 0.0f;
-  }
-
-  char buf[340];
+  char buf[380];
   snprintf(buf, sizeof(buf),
-    "{\"sensorConnected\":true,\"level\":%.1f,\"distance\":%.1f,\"flow\":%.1f,\"total\":%.2f,\"current\":%.2f,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\",\"lockout\":\"%s\",\"uptime\":%lu,\"wifi\":%s,\"ip\":\"%s\"}",
-    level, distance, flow, total, current,
+    "{\"sensorConnected\":%s,\"level\":%.1f,\"distance\":%.1f,\"flow\":%.1f,\"total\":%.2f,\"current\":%.2f,\"rawAdc\":%d,\"waterProbe\":%s,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\",\"lockout\":\"%s\",\"uptime\":%lu,\"wifi\":%s,\"ip\":\"%s\"}",
+    hasRealSensor ? "true" : "false",
+    level, distance, flow, total, current, rawAdc,
+    waterProbe ? "true" : "false",
     pumpStr, modeStr, statusStr, lockoutStr, uptimeSec,
     (WiFi.status() == WL_CONNECTED) ? "true" : "false",
     (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str() : "192.168.4.1"

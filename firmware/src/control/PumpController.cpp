@@ -5,7 +5,8 @@ namespace SmartTank {
 
 PumpController::PumpController(RelayDriver& relay,
                                float autoStartPct, float autoStopPct, float hardCutoffPct,
-                               uint32_t maxRuntimeMs, uint32_t dryRunGraceMs, uint32_t dryRunTripMs)
+                               uint32_t maxRuntimeMs, uint32_t dryRunGraceMs, uint32_t dryRunTripMs,
+                               float dryRunThresholdLpm, bool dryRunEnabled)
     : _relay(relay),
       _autoStartPct(autoStartPct),
       _autoStopPct(autoStopPct),
@@ -13,25 +14,31 @@ PumpController::PumpController(RelayDriver& relay,
       _maxRuntimeMs(maxRuntimeMs),
       _dryRunGraceMs(dryRunGraceMs),
       _dryRunTripMs(dryRunTripMs),
-      _mode(ControlMode::AUTO),
-      _state(ControllerState::INITIALIZING),
+      _dryRunThresholdLpm(dryRunThresholdLpm > 0.0f ? dryRunThresholdLpm : DRY_RUN_FLOW_THRESHOLD_LPM),
+      _dryRunEnabled(dryRunEnabled),
+      _mode(DEFAULT_STARTUP_IN_MANUAL_MODE ? ControlMode::MANUAL : ControlMode::AUTO),
+      _state(ControllerState::IDLE),
       _lockout(SafetyLockout::NONE),
       _pumpStartTimeMs(0),
       _zeroFlowStartTimeMs(0),
       _lastSwitchTimeMs(0),
       _lastLevelPercent(0.0f),
-      _lastLevelValid(false) {}
+      _lastLevelValid(false),
+      _lastProbeWet(false),
+      _probeIsOverflowInterlock(WATER_PROBE_IS_OVERFLOW_INTERLOCK) {}
 
 void PumpController::begin() {
   _relay.begin();
-  _mode = ControlMode::AUTO;
-  _state = ControllerState::INITIALIZING;
+  _mode = DEFAULT_STARTUP_IN_MANUAL_MODE ? ControlMode::MANUAL : ControlMode::AUTO;
+  _state = ControllerState::IDLE;
   _lockout = SafetyLockout::NONE;
   _pumpStartTimeMs = 0;
   _zeroFlowStartTimeMs = 0;
   _lastSwitchTimeMs = 0;
   _lastLevelPercent = 0.0f;
   _lastLevelValid = false;
+  _lastProbeWet = false;
+  _probeIsOverflowInterlock = WATER_PROBE_IS_OVERFLOW_INTERLOCK;
 }
 
 void PumpController::transitionTo(ControllerState newState) {
@@ -74,10 +81,25 @@ void PumpController::applyPumpAction(bool on, uint32_t currentMillis) {
 }
 
 void PumpController::update(uint32_t currentMillis, float levelPercent, bool isLevelValid,
-                            float flowRateLpm, float currentA, bool isStale) {
+                            float flowRateLpm, float currentA, bool isStale,
+                            bool isProbeWet, bool probeIsOverflowInterlock) {
   (void)currentA; // Reserved for current-signature overload/stall checks
   _lastLevelPercent = levelPercent;
   _lastLevelValid = isLevelValid && !isStale;
+  _lastProbeWet = isProbeWet;
+  _probeIsOverflowInterlock = probeIsOverflowInterlock;
+
+  // 0. Mandatory Safety Interlock 0: High-Water / Overflow Contact Probe (Enforced across ALL modes)
+  if (probeIsOverflowInterlock && isProbeWet) {
+    if (_relay.isPumpOn()) {
+      applyPumpAction(false, currentMillis);
+    }
+    _lockout = SafetyLockout::OVERFLOW_PROBE_TRIPPED;
+    transitionTo(ControllerState::FAULT);
+    return;
+  } else if (_lockout == SafetyLockout::OVERFLOW_PROBE_TRIPPED && !isProbeWet) {
+    _lockout = SafetyLockout::NONE;
+  }
 
   // 1. Mandatory Safety Interlock 1: Sensor Failure Handling (Strictly enforced in AUTO mode)
   if (!isLevelValid || isStale) {
@@ -123,10 +145,10 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
       return;
     }
 
-    // Dry-run / zero-flow detection (enforced in AUTO or when valid level is present)
-    if (_mode == ControlMode::AUTO || _lastLevelValid) {
+    // Dry-run / zero-flow detection (only when enabled and pump is running)
+    if (_dryRunEnabled && (_mode == ControlMode::AUTO || _lastLevelValid)) {
       if (runningDuration > _dryRunGraceMs) {
-        if (flowRateLpm <= 0.1f) {
+        if (flowRateLpm <= _dryRunThresholdLpm) {
           if (_zeroFlowStartTimeMs == 0) {
             _zeroFlowStartTimeMs = currentMillis;
           } else if (currentMillis - _zeroFlowStartTimeMs >= _dryRunTripMs) {
@@ -207,11 +229,23 @@ CommandResult PumpController::requestManualPump(bool pumpOn, uint32_t currentMil
   }
 
   if (pumpOn) {
-    // High-water cutoff check if sensor reading is valid
+    // Interlock 0: High-water overflow contact probe
+    if (_probeIsOverflowInterlock && _lastProbeWet) {
+      _lockout = SafetyLockout::OVERFLOW_PROBE_TRIPPED;
+      transitionTo(ControllerState::FAULT);
+      return { false, "Safety lockout: Overflow contact probe is WET." };
+    }
+
+    // Interlock 1: High-water cutoff check if ultrasonic reading is valid
     if (_lastLevelValid && _lastLevelPercent >= _hardCutoffPct) {
       _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
       transitionTo(ControllerState::FAULT);
       return { false, "Safety lockout: Tank is already full (>= 95%)." };
+    }
+
+    // Interlock 2: Active safety lockout
+    if (_lockout != SafetyLockout::NONE) {
+      return { false, "Safety lockout: Cannot start pump while safety fault is active." };
     }
 
     _lockout = SafetyLockout::NONE;
@@ -258,6 +292,7 @@ const char* PumpController::getLockoutString() const {
     case SafetyLockout::MAX_RUNTIME_EXCEEDED: return "MAX_RUNTIME_EXCEEDED";
     case SafetyLockout::DRY_RUN_DETECTED: return "DRY_RUN_DETECTED";
     case SafetyLockout::SENSOR_FAULT: return "SENSOR_FAULT";
+    case SafetyLockout::OVERFLOW_PROBE_TRIPPED: return "OVERFLOW_PROBE_TRIPPED";
     default: return "NONE";
   }
 }

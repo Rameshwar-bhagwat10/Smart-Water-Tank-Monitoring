@@ -8,23 +8,32 @@ RelayDriver::RelayDriver(uint8_t pin, bool activeLow)
       _isEnergized(false) {}
 
 void RelayDriver::begin() {
-  // Safe boot sequence: Set pin HIGH if active-LOW, or LOW if active-HIGH BEFORE enabling OUTPUT mode
-  uint8_t deenergizedState = _activeLow ? HIGH : LOW;
-  digitalWrite(_pin, deenergizedState);
-  pinMode(_pin, OUTPUT);
-  digitalWrite(_pin, deenergizedState);
   _isEnergized = false;
+  if (_activeLow) {
+    // For 5V active-LOW optocoupled relays driven by 3.3V ESP8266:
+    // Putting pin in INPUT (High-Z) mode completely stops 1.7V leakage current from 5V rail.
+    pinMode(_pin, INPUT);
+  } else {
+    digitalWrite(_pin, LOW);
+    pinMode(_pin, OUTPUT);
+  }
 }
 
 void RelayDriver::setPump(bool on) {
   _isEnergized = on;
-  uint8_t pinState = 0;
   if (_activeLow) {
-    pinState = on ? LOW : HIGH;
+    if (on) {
+      // Actively pull pin to 0V / GND to complete circuit through optocoupler
+      digitalWrite(_pin, LOW);
+      pinMode(_pin, OUTPUT);
+    } else {
+      // High-Z disconnects the path to GND: 100% turns off optocoupler and LED!
+      pinMode(_pin, INPUT);
+    }
   } else {
-    pinState = on ? HIGH : LOW;
+    pinMode(_pin, OUTPUT);
+    digitalWrite(_pin, on ? HIGH : LOW);
   }
-  digitalWrite(_pin, pinState);
 }
 
 } // namespace SmartTank

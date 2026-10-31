@@ -14,7 +14,9 @@ public:
 
   void begin();
   void calibrateZero();
-  float measureRmsCurrent(uint16_t samples = 150);
+  float measureDcCurrent(uint16_t samples = 32);
+  // Backwards-compatible alias for existing callers
+  float measureRmsCurrent(uint16_t samples = 32) { return measureDcCurrent(samples); }
 
   float getLastCurrentA() const { return _lastCurrentA; }
   int getLastRawAdc() const { return _lastRawAdc; }

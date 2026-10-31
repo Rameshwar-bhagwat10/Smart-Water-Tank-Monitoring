@@ -48,63 +48,20 @@ export function listenToCommandAcks(tankId, callback) {
 }
 
 /**
- * Scans tanks sequentially (tank-01, tank-02, tank-03...) to find the tank
- * owned by this user, or the next available unused tank slot.
- * Ensures every user gets their own separate tank.
+ * Allocates tank for user. Defaults to primary physical hardware tank 'tank-01'.
  */
 export async function allocateTankForUser(uid, preferredTankId = null) {
-  // If user already has a preferred tank, check if it's already theirs or free
-  if (preferredTankId) {
-    try {
-      const liveSnap = await get(ref(db, `tanks/${preferredTankId}/live`));
-      if (!liveSnap.exists()) {
-        // Preferred tank is completely free
-        return preferredTankId;
-      }
-      const data = liveSnap.val();
-      // If already owned by this user, keep it!
-      if (!data.ownerUid || data.ownerUid === uid) {
-        return preferredTankId;
-      }
-      // If owned by someone else, user was mistakenly sharing! Allocate a separate tank.
-    } catch (e) {
-      console.warn(`[Firebase DB] Error checking preferred tank ${preferredTankId}:`, e);
-    }
-  }
-
-  // Scan tank-01 through tank-99 to find free or user-owned tank
-  for (let i = 1; i <= 99; i++) {
-    const candidateId = `tank-${String(i).padStart(2, '0')}`;
-    try {
-      const snap = await get(ref(db, `tanks/${candidateId}/live`));
-      if (!snap.exists()) {
-        // candidateId is free!
-        return candidateId;
-      }
-      const liveData = snap.val();
-      if (liveData && liveData.ownerUid === uid) {
-        // User already owns this candidate tank!
-        return candidateId;
-      }
-    } catch (err) {
-      console.warn(`[Firebase DB] Error scanning candidate ${candidateId}:`, err);
-    }
-  }
-
-  return `tank-${uid.substring(0, 6)}`;
+  if (preferredTankId) return preferredTankId;
+  return 'tank-01';
 }
 
 /**
- * Fully initializes all 4 child nodes for a tank matching initial JSON:
- * - /tanks/${tankId}/live
- * - /tanks/${tankId}/commands
- * - /tanks/${tankId}/commandAcks/${cmdId}
- * - /tanks/${tankId}/alerts/init
+ * Initializes nodes for a tank with zero-baseline metrics (zero mock data)
  */
 export async function createTankStructure(tankId, uid, email) {
   const initialLive = {
-    levelPercent: 75.0,
-    distanceCm: 25.0,
+    levelPercent: 0.0,
+    distanceCm: 0.0,
     flowRateLpm: 0.0,
     totalLitres: 0.0,
     pumpCurrentA: 0.0,
@@ -113,6 +70,7 @@ export async function createTankStructure(tankId, uid, email) {
     controllerStatus: 'IDLE',
     sensorStatus: 'OK',
     faultCode: 'NONE',
+    waterProbe: false,
     wifiConnected: true,
     updatedAt: Date.now(),
     ownerUid: uid,

@@ -21,6 +21,7 @@ FlowSensor::FlowSensor(uint8_t pin, float pulsesPerLitre)
       _lastTotalPulseCount(0) {}
 
 void FlowSensor::begin() {
+  // Enable internal pull-up so open-collector Hall sensor works directly or with external 10k
   pinMode(_pin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(_pin), FlowSensor::onPulseInterrupt, RISING);
 }

@@ -262,18 +262,18 @@ function showDashboard() {
     <div class="grid">
       <div class="mb">
         <div class="mt"><span class="ml">Flow Rate</span><div class="mi ib">💧</div></div>
-        <div class="mv"><span id="vf">--</span> <span class="u">L/min</span></div>
+        <div class="mv"><span id="vf">0.0</span> <span class="u">L/min</span></div>
         <div class="ms">Total: <b id="vt">0.00</b> L</div>
       </div>
       <div class="mb">
         <div class="mt"><span class="ml">Pump Current</span><div class="mi io">⚡</div></div>
-        <div class="mv"><span id="vc">--</span> <span class="u">A</span></div>
-        <div class="ms">ACS712 Sensor</div>
+        <div class="mv"><span id="vc">0.00</span> <span class="u">A</span></div>
+        <div class="ms">ACS712 A0 | Raw: <b id="va">--</b></div>
       </div>
       <div class="mb">
         <div class="mt"><span class="ml">Relay</span><div class="mi ig">🔌</div></div>
         <div class="mv" style="margin-top:2px"><span id="vr" class="rp off">OFF</span></div>
-        <div class="ms">GPIO12 Relay</div>
+        <div class="ms">D6 Pin | Probe: <b id="vp">DRY</b></div>
       </div>
       <div class="mb">
         <div class="mt"><span class="ml">State</span><div class="mi ip">🛡️</div></div>
@@ -286,7 +286,7 @@ function showDashboard() {
     <div class="cd ch-wrap">
       <div class="ch-hd">
         <span class="ch-t">Flow Rate Sparkline</span>
-        <span class="ch-v" id="ch-fv">-- L/min</span>
+        <span class="ch-v" id="ch-fv">0.0 L/min</span>
       </div>
       <canvas id="cF" height="80"></canvas>
     </div>
@@ -400,6 +400,8 @@ function updateDashboard(d) {
   const pump = d.pumpState ?? d.pump ?? 'OFF';
   const mode = d.controlMode ?? d.mode ?? 'AUTO';
   const status = d.controllerStatus ?? d.status ?? 'Standby';
+  const waterProbe = d.waterProbe ?? false;
+  const rawAdc = d.rawAdc ?? '--';
 
   // Water Level
   const sb = document.getElementById('bs');
@@ -420,15 +422,15 @@ function updateDashboard(d) {
   }
 
   // Flow
-  const fv = flow > 0.05 ? flow : 0;
-  document.getElementById('vf').textContent = fv > 0.05 ? fv.toFixed(1) : '--';
+  const fv = (flow >= 0) ? flow : 0;
+  document.getElementById('vf').textContent = fv.toFixed(1);
   document.getElementById('vt').textContent = total.toFixed(2);
   fH.push(fv); if (fH.length > MX) fH.shift();
-  document.getElementById('ch-fv').textContent = fv > 0.05 ? fv.toFixed(1) + ' L/min' : '-- L/min';
+  document.getElementById('ch-fv').textContent = fv.toFixed(1) + ' L/min';
 
   // Current
-  const cv = current > 0.05 ? current : 0;
-  document.getElementById('vc').textContent = cv > 0.05 ? cv.toFixed(2) : '--';
+  const cv = (current >= 0) ? current : 0;
+  document.getElementById('vc').textContent = cv.toFixed(2);
   cH.push(cv); if (cH.length > MX) cH.shift();
   if (cv > pC) pC = cv;
   cS += cv; cN++;
@@ -440,6 +442,12 @@ function updateDashboard(d) {
   else if (cv > 0.1) { gsEl.textContent = 'Running'; gsEl.style.color = 'var(--orange)'; }
   else { gsEl.textContent = 'Idle'; gsEl.style.color = 'var(--green)'; }
   drawGauge(cv);
+
+  // Water Probe & Raw ADC
+  const vp = document.getElementById('vp');
+  if (vp) vp.innerHTML = waterProbe ? '<span style="color:var(--red)">DETECTED</span>' : '<span style="color:var(--green)">DRY</span>';
+  const va = document.getElementById('va');
+  if (va) va.textContent = rawAdc;
 
   // Relay
   const rp = document.getElementById('vr');

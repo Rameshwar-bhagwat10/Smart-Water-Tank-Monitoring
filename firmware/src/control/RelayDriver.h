@@ -12,6 +12,11 @@ public:
   void setPump(bool on);
   bool isPumpOn() const { return _isEnergized; }
   const char* getStateString() const { return _isEnergized ? "ON" : "OFF"; }
+  bool isActiveLow() const { return _activeLow; }
+  void setActiveLow(bool activeLow) {
+    _activeLow = activeLow;
+    setPump(false); // Ensure relay remains safely de-energized with new polarity
+  }
 
 private:
   uint8_t _pin;

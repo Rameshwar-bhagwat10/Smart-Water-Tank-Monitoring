@@ -61,33 +61,23 @@ void CurrentSensor::calibrateZero() {
   _zeroOffsetMv = adcMillivoltsToSensorMillivolts(adcV, _dividerRatio);
 }
 
-float CurrentSensor::measureRmsCurrent(uint16_t samples) {
-  if (samples == 0) samples = 100;
+float CurrentSensor::measureDcCurrent(uint16_t samples) {
+  if (samples == 0) samples = 32;
 
-  double sumSquares = 0.0;
-  int latestRaw = 0;
-
+  uint32_t sumAdc = 0;
   for (uint16_t i = 0; i < samples; ++i) {
-    latestRaw = analogRead(_pin);
-    float adcV = rawAdcToMillivolts(latestRaw, ADC_VOLTAGE_REF_MV, ADC_MAX_COUNTS);
-    float sensorV = adcMillivoltsToSensorMillivolts(adcV, _dividerRatio);
-    float currentInstant = (sensorV - _zeroOffsetMv) / _sensitivityMvPerA;
-    sumSquares += (currentInstant * currentInstant);
-    delayMicroseconds(200);
+    sumAdc += analogRead(_pin);
+    delayMicroseconds(600); // 32 samples * 600µs = ~19.2ms (integrates out 50Hz/60Hz AC ripple)
   }
 
-  _lastRawAdc = latestRaw;
+  _lastRawAdc = static_cast<int>(sumAdc / samples);
 
-  double meanSquare = sumSquares / static_cast<double>(samples);
-  float rms = static_cast<float>(sqrt(meanSquare));
+  float adcV = rawAdcToMillivolts(_lastRawAdc, ADC_VOLTAGE_REF_MV, ADC_MAX_COUNTS);
+  float sensorV = adcMillivoltsToSensorMillivolts(adcV, _dividerRatio);
 
-  // Noise gate
-  if (rms < 0.08f) {
-    rms = 0.0f;
-  }
-
-  _lastCurrentA = rms;
-  return rms;
+  float amps = voltageDeltaToAmperes(sensorV, _zeroOffsetMv, _sensitivityMvPerA);
+  _lastCurrentA = amps;
+  return amps;
 }
 
 } // namespace SmartTank

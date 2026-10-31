@@ -71,12 +71,12 @@ float UltrasonicSensor::readRawDistance() {
   delayMicroseconds(10);
   digitalWrite(_trigPin, LOW);
 
-  // Max range ~250 cm -> ~14500 microseconds max round-trip
-  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 15000;
+  // Max acoustic range 400 cm -> ~23323 microseconds round-trip at 343 m/s
+  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 25000;
   unsigned long duration = pulseIn(_echoPin, HIGH, MAX_ECHO_TIMEOUT_US);
 
   if (duration == 0) {
-    return -1.0f; // Timeout
+    return -1.0f; // Timeout or sensor disconnected
   }
 
   return durationToDistanceCm(duration);

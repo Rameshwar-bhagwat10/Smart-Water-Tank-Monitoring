@@ -33,20 +33,9 @@ void FirebaseClient::addTank(const String& tankId) {
   node.lastProcessedCommandId[0] = '\0';
   node.baselineEstablished = false;
   node.mode = "AUTO";
-  node.pumpState = "OFF";
-  if (tankId == "tank-02") {
-    node.levelPercent = 65.0f;
-    node.distanceCm = 28.0f;
-    node.totalLitres = 180.5f;
-  } else if (tankId == "tank-03") {
-    node.levelPercent = 52.0f;
-    node.distanceCm = 34.5f;
-    node.totalLitres = 95.2f;
-  } else {
-    node.levelPercent = 78.5f;
-    node.distanceCm = 18.2f;
-    node.totalLitres = 342.8f;
-  }
+  node.levelPercent = 0.0f;
+  node.distanceCm = 0.0f;
+  node.totalLitres = 0.0f;
   node.flowRateLpm = 0.0f;
   node.pumpCurrentA = 0.0f;
   node.status = "IDLE";
@@ -164,11 +153,11 @@ bool FirebaseClient::publishTelemetryForTank(const String& tankId, const Telemet
   if (url.length() == 0) return false;
 
   JsonDocument doc;
-  doc["levelPercent"] = serialized(String(telemetry.levelPercent, 1));
-  doc["distanceCm"] = serialized(String(telemetry.distanceCm, 1));
-  doc["flowRateLpm"] = serialized(String(telemetry.flowRateLpm, 1));
-  doc["totalLitres"] = serialized(String(telemetry.totalLitres, 2));
-  doc["pumpCurrentA"] = serialized(String(telemetry.pumpCurrentA, 2));
+  doc["levelPercent"] = serialized(String((telemetry.levelPercent >= 0.0f) ? telemetry.levelPercent : 0.0f, 1));
+  doc["distanceCm"] = serialized(String((telemetry.distanceCm >= 0.0f) ? telemetry.distanceCm : 0.0f, 1));
+  doc["flowRateLpm"] = serialized(String((telemetry.flowRateLpm >= 0.0f) ? telemetry.flowRateLpm : 0.0f, 1));
+  doc["totalLitres"] = serialized(String((telemetry.totalLitres >= 0.0f) ? telemetry.totalLitres : 0.0f, 2));
+  doc["pumpCurrentA"] = serialized(String((telemetry.pumpCurrentA >= 0.0f) ? telemetry.pumpCurrentA : 0.0f, 2));
   doc["pumpState"] = (pumpState.length() > 0) ? pumpState.c_str() : telemetry.pumpState;
   doc["controlMode"] = (mode.length() > 0) ? mode.c_str() : telemetry.controlMode;
   doc["sensorStatus"] = telemetry.sensorStatus;
@@ -178,8 +167,12 @@ bool FirebaseClient::publishTelemetryForTank(const String& tankId, const Telemet
   if (telemetry.faultCode != nullptr) {
     doc["faultCode"] = telemetry.faultCode;
   }
+  doc["waterProbe"] = telemetry.waterProbeDetected;
+  doc["rawAdc"] = telemetry.rawAdc;
   doc["wifiConnected"] = true;
-  doc["updatedAt"] = (double)telemetry.timestampMs;
+  time_t nowSec = time(nullptr);
+  double timeMs = (nowSec > 1700000000) ? ((double)nowSec * 1000.0) : (double)millis();
+  doc["updatedAt"] = timeMs;
 
   String payload;
   serializeJson(doc, payload);
@@ -517,8 +510,8 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
     for (size_t i = 0; i < _tanks.size(); i++) {
       TankNode& node = _tanks[i];
       if (node.id == _primaryTankId) {
-        node.levelPercent = (telemetry.levelPercent >= 0.0f) ? telemetry.levelPercent : 78.5f;
-        node.distanceCm = (telemetry.distanceCm >= 0.0f) ? telemetry.distanceCm : 18.2f;
+        node.levelPercent = (telemetry.levelPercent >= 0.0f) ? telemetry.levelPercent : 0.0f;
+        node.distanceCm = (telemetry.distanceCm >= 0.0f) ? telemetry.distanceCm : 0.0f;
         node.flowRateLpm = telemetry.flowRateLpm;
         node.totalLitres = telemetry.totalLitres;
         node.pumpCurrentA = telemetry.pumpCurrentA;

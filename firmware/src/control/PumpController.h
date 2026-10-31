@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "RelayDriver.h"
+#include "../config/AppConfig.h"
 
 namespace SmartTank {
 
@@ -25,7 +26,8 @@ enum class SafetyLockout {
   HIGH_LEVEL_CUTOFF,
   MAX_RUNTIME_EXCEEDED,
   DRY_RUN_DETECTED,
-  SENSOR_FAULT
+  SENSOR_FAULT,
+  OVERFLOW_PROBE_TRIPPED
 };
 
 struct CommandResult {
@@ -37,11 +39,14 @@ class PumpController {
 public:
   PumpController(RelayDriver& relay,
                  float autoStartPct, float autoStopPct, float hardCutoffPct,
-                 uint32_t maxRuntimeMs, uint32_t dryRunGraceMs, uint32_t dryRunTripMs);
+                 uint32_t maxRuntimeMs, uint32_t dryRunGraceMs, uint32_t dryRunTripMs,
+                 float dryRunThresholdLpm = DRY_RUN_FLOW_THRESHOLD_LPM,
+                 bool dryRunEnabled = DRY_RUN_PROTECTION_ENABLED);
 
   void begin();
   void update(uint32_t currentMillis, float levelPercent, bool isLevelValid,
-              float flowRateLpm, float currentA, bool isStale = false);
+              float flowRateLpm, float currentA, bool isStale = false,
+              bool isProbeWet = false, bool probeIsOverflowInterlock = WATER_PROBE_IS_OVERFLOW_INTERLOCK);
 
   // Command handlers
   CommandResult requestMode(ControlMode newMode, uint32_t currentMillis = 0);
@@ -60,6 +65,10 @@ public:
   SafetyLockout getLockout() const { return _lockout; }
   const char* getLockoutString() const;
 
+  void setDryRunEnabled(bool enabled) { _dryRunEnabled = enabled; }
+  bool isDryRunEnabled() const { return _dryRunEnabled; }
+  void setDryRunThresholdLpm(float lpm) { if (lpm > 0.0f) _dryRunThresholdLpm = lpm; }
+
   // Pure state machine logic for host unit testing
   static bool shouldAutoStart(float levelPercent, float autoStartPct, bool isLevelValid);
   static bool shouldAutoStop(float levelPercent, float autoStopPct, bool isLevelValid);
@@ -75,6 +84,8 @@ private:
   uint32_t _maxRuntimeMs;
   uint32_t _dryRunGraceMs;
   uint32_t _dryRunTripMs;
+  float _dryRunThresholdLpm;
+  bool _dryRunEnabled;
 
   ControlMode _mode;
   ControllerState _state;
@@ -86,6 +97,8 @@ private:
 
   float _lastLevelPercent;
   bool _lastLevelValid;
+  bool _lastProbeWet;
+  bool _probeIsOverflowInterlock;
 
   void applyPumpAction(bool on, uint32_t currentMillis);
   void transitionTo(ControllerState newState);

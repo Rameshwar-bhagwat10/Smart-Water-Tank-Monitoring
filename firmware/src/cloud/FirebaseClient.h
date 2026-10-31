@@ -22,6 +22,9 @@ struct TelemetryPacket {
   const char* controllerStatus;
   const char* faultCode;
   bool isLevelValid;
+  bool waterProbeDetected;
+  int rawAdc;
+  uint32_t flowPulses;
   unsigned long timestampMs;
 };
 
