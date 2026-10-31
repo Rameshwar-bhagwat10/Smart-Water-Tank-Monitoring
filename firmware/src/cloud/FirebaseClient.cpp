@@ -194,6 +194,7 @@ bool FirebaseClient::publishTelemetryForTank(const String& tankId, const Telemet
   doc["waterProbe"] = telemetry.waterProbeDetected;
   doc["rawAdc"] = telemetry.rawAdc;
   doc["wifiConnected"] = true;
+  doc["deviceIp"] = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : "192.168.4.1";
   time_t nowSec = time(nullptr);
   double timeMs = (nowSec > 1700000000) ? ((double)nowSec * 1000.0) : (double)millis();
   doc["updatedAt"] = timeMs;
@@ -339,12 +340,12 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
     if (res.accepted) {
       node.status = reqPumpOn ? "MANUAL_FILLING" : "STANDBY";
       if (alertMgr) {
-        alertMgr->playTone(2500, reqPumpOn ? 180 : 120);
+        alertMgr->playTone(2500, reqPumpOn ? 40 : 25);
       }
     } else {
       node.status = "FAULT";
       if (alertMgr) {
-        alertMgr->playTone(2000, 80);
+        alertMgr->playTone(2000, 40);
       }
     }
   } else {
@@ -352,7 +353,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
     actionAccepted = true;
     node.status = "AUTO_IDLE";
     if (alertMgr) {
-      alertMgr->triggerModeSwitchChirp();
+      alertMgr->playTone(2700, 30);
     }
   }
 
@@ -370,10 +371,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
   Serial.println(F("╚════════════════════════════════════════════════════════════════════╝"));
   Serial.println();
 
-  // Send ACK after relay has actuated
-  sendCommandAck(node.id.c_str(), cmdId, actionAccepted ? "APPLIED" : "REJECTED", actionAccepted ? "Relay actuated" : actionReason);
   anyProcessed = true;
-
   return anyProcessed;
 }
 

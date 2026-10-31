@@ -24,6 +24,7 @@ const lH = [], fH = [], cH = [];
 let pC = 0, cS = 0, cN = 0, lastPump = '', lastState = '', lastWaterProbe = false;
 let lastLevel = -1;
 let lastFullTankAlarmWebMs = 0;
+let lastDeviceIp = '';
 const evts = [];
 
 // ============================================================================
@@ -413,6 +414,12 @@ window._sM = async (mode) => {
   currentMode = mode;
   uMB(mode, lastPump, lastLevel, lastWaterProbe);
 
+  // Dual-channel fast actuation: Direct LAN fetch (1ms) + Cloud Firebase (30ms)
+  const targets = [];
+  if (lastDeviceIp) targets.push(`http://${lastDeviceIp}/api/command?mode=${mode}&_t=${Date.now()}`);
+  targets.push(`http://192.168.4.1/api/command?mode=${mode}&_t=${Date.now()}`);
+  targets.forEach(u => fetch(u, { mode: 'no-cors', cache: 'no-store' }).catch(() => {}));
+
   try {
     const t0 = performance.now();
     await sendCommand(activeTankId, currentUser.uid, mode, (lastPump === 'ON') ? 'ON' : 'OFF');
@@ -448,6 +455,12 @@ window._sP = async (state) => {
     else { rp.textContent = 'OFF'; rp.className = 'rp off'; }
   }
 
+  // Dual-channel fast actuation: Direct LAN fetch (1ms) + Cloud Firebase (30ms)
+  const targets = [];
+  if (lastDeviceIp) targets.push(`http://${lastDeviceIp}/api/command?mode=MANUAL&pump=${state}&_t=${Date.now()}`);
+  targets.push(`http://192.168.4.1/api/command?mode=MANUAL&pump=${state}&_t=${Date.now()}`);
+  targets.forEach(u => fetch(u, { mode: 'no-cors', cache: 'no-store' }).catch(() => {}));
+
   try {
     const t0 = performance.now();
     await sendCommand(activeTankId, currentUser.uid, 'MANUAL', state);
@@ -465,6 +478,9 @@ window._sP = async (state) => {
 // UPDATE DASHBOARD FROM FIREBASE DATA
 // ============================================================================
 function updateDashboard(d) {
+  if (d.deviceIp) lastDeviceIp = d.deviceIp;
+  else if (d.ip) lastDeviceIp = d.ip;
+
   // Map Firebase field names to our UI
   let level = parseFloat(d.levelPercent ?? d.level ?? -1);
   let distance = parseFloat(d.distanceCm ?? d.distance ?? -1);
