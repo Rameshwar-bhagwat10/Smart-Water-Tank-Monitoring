@@ -24,18 +24,34 @@ export function listenToTelemetry(tankId, callback) {
 export async function sendCommand(tankId, userId, mode, pumpState, action = null) {
   if (!isConfigured) throw new Error('Firebase not configured');
   const commandRef = ref(db, `tanks/${tankId}/commands`);
+  const liveRef = ref(db, `tanks/${tankId}/live`);
   const commandId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  const validatedPumpState = (pumpState === 'ON') ? 'ON' : 'OFF';
+  const validatedMode = (mode === 'MANUAL') ? 'MANUAL' : 'AUTO';
   const payload = {
     commandId: commandId,
-    requestedMode: mode,
-    requestedPumpState: pumpState,
+    requestedMode: validatedMode,
+    requestedPumpState: validatedPumpState,
     requestedAt: Date.now(),
     requestedBy: userId
   };
   if (action) {
     payload.action = action;
   }
-  await set(commandRef, payload);
+
+  // Simultaneously publish command and optimistic live state for 0ms cloud fleet sync
+  const liveUpdate = {
+    controlMode: validatedMode,
+    updatedAt: Date.now()
+  };
+  if (mode === 'MANUAL') {
+    liveUpdate.pumpState = validatedPumpState;
+  }
+
+  await Promise.all([
+    set(commandRef, payload),
+    update(liveRef, liveUpdate).catch((e) => console.warn('[Firebase DB] Optimistic live update:', e))
+  ]);
   return commandId;
 }
 

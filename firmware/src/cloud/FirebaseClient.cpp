@@ -339,14 +339,12 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
     if (res.accepted) {
       node.status = reqPumpOn ? "MANUAL_FILLING" : "STANDBY";
       if (alertMgr) {
-        alertMgr->playTone(2500, reqPumpOn ? 600 : 300);
+        alertMgr->playTone(2500, reqPumpOn ? 180 : 120);
       }
     } else {
       node.status = "FAULT";
       if (alertMgr) {
-        alertMgr->playTone(2000, 100);
-        delay(50);
-        alertMgr->playTone(2000, 100);
+        alertMgr->playTone(2000, 80);
       }
     }
   } else {
@@ -354,9 +352,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertMana
     actionAccepted = true;
     node.status = "AUTO_IDLE";
     if (alertMgr) {
-      alertMgr->playTone(2700, 150);
-      delay(50);
-      alertMgr->playTone(3000, 150);
+      alertMgr->triggerModeSwitchChirp();
     }
   }
 

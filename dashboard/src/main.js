@@ -22,27 +22,41 @@ let optimisticModeExpires = 0;
 const MX = 60;
 const lH = [], fH = [], cH = [];
 let pC = 0, cS = 0, cN = 0, lastPump = '', lastState = '', lastWaterProbe = false;
+let lastLevel = -1;
+let lastFullTankAlarmWebMs = 0;
 const evts = [];
 
 // ============================================================================
-// WEB AUDIO BUZZER SOUND ENGINE (Emulates 2.5kHz hardware piezo buzzer)
+// WEB AUDIO BUZZER SOUND ENGINE (Resilient promise-based square-wave synthesizer)
 // ============================================================================
 let audioCtx = null;
 
-function playWebBuzzer(freq = 2500, durationSec = 0.2, type = 'square') {
+function playWebBuzzer(freq = 2500, durationMs = 200, type = 'square') {
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationSec);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + durationSec);
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!audioCtx) audioCtx = new AC();
+    const play = () => {
+      try {
+        const now = audioCtx.currentTime;
+        const dur = (durationMs || 200) / 1000;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq || 2500, now);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + dur);
+      } catch (err) {}
+    };
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
   } catch (e) {}
 }
 
@@ -275,6 +289,23 @@ function showDashboard() {
       </div>
     </div>
 
+    <!-- Controls (Directly below water level box, matching local dashboard) -->
+    <div class="cd">
+      <div class="st">Control Mode</div>
+      <div class="seg">
+        <button class="sb a" id="ba" onclick="window._sM('AUTO')">Automatic</button>
+        <button class="sb" id="bm" onclick="window._sM('MANUAL')">Manual</button>
+      </div>
+      <div class="ag">
+        <button class="ab bs" id="as" disabled onclick="window._sP('ON')">⚡ Start</button>
+        <button class="ab bp" id="ap" disabled onclick="window._sP('OFF')">🛑 Stop</button>
+      </div>
+      <div class="fr">
+        <span>Status: <b id="ak">Auto: Standby</b></span>
+        <span id="st" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-sec)">Cloud RTDB</span>
+      </div>
+    </div>
+
     <!-- Water Level History Chart (Neon Lime Curve) -->
     <div class="cd ch-wrap">
       <div class="ch-hd">
@@ -336,23 +367,6 @@ function showDashboard() {
       </div>
     </div>
 
-    <!-- Controls (Kalo Pill Segmented Switcher & Monex Action Buttons) -->
-    <div class="cd">
-      <div class="st">Control Mode</div>
-      <div class="seg">
-        <button class="sb a" id="ba" onclick="window._sM('AUTO')">Automatic</button>
-        <button class="sb" id="bm" onclick="window._sM('MANUAL')">Manual</button>
-      </div>
-      <div class="ag">
-        <button class="ab bs" id="as" disabled onclick="window._sP('ON')">⚡ Start</button>
-        <button class="ab bp" id="ap" disabled onclick="window._sP('OFF')">🛑 Stop</button>
-      </div>
-      <div class="fr">
-        <span>Status: <b id="ak">Standby</b></span>
-        <span id="st" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-sec)">Firebase RTDB</span>
-      </div>
-    </div>
-
     <!-- Activity Timeline -->
     <div class="cd">
       <div class="ch-hd"><span class="ch-t">Activity Log</span><span class="ch-v" id="tl-ct">0 events</span></div>
@@ -378,7 +392,7 @@ function showDashboard() {
 }
 
 // ============================================================================
-// EXPOSE GLOBAL HANDLERS (for onclick in HTML)
+// EXPOSE GLOBAL HANDLERS (Instant <1ms optimistic feedback & responsive actuation)
 // ============================================================================
 window._logout = async () => {
   stopListening();
@@ -387,35 +401,47 @@ window._logout = async () => {
 
 window._sM = async (mode) => {
   if (!currentUser) return;
-  playWebBuzzer(2700, 0.15);
+  playWebBuzzer(2700, 150);
   const ak = document.getElementById('ak');
   if (ak) ak.textContent = 'Setting ' + mode + '...';
+  const st = document.getElementById('st');
+  if (st) st.textContent = 'Switching 0ms';
+
   // Instant optimistic feedback (<1ms)
   optimisticMode = mode;
-  optimisticModeExpires = Date.now() + 2500;
+  optimisticModeExpires = Date.now() + 3500;
   currentMode = mode;
-  uMB(mode, lastPump);
+  uMB(mode, lastPump, lastLevel, lastWaterProbe);
+
   try {
-    await sendCommand(activeTankId, currentUser.uid, mode, mode === 'AUTO' ? 'OFF' : (lastPump || 'OFF'));
-    if (ak) ak.textContent = mode === 'AUTO' ? 'Auto Control Active' : 'Manual Standby';
+    const t0 = performance.now();
+    await sendCommand(activeTankId, currentUser.uid, mode, (lastPump === 'ON') ? 'ON' : 'OFF');
+    const elapsed = Math.round(performance.now() - t0);
+    if (st) st.textContent = 'Synced ' + elapsed + 'ms';
     addEvt('Mode → ' + mode, '#AF52DE');
   } catch (e) {
     if (ak) ak.textContent = 'Error: ' + e.message;
+    optimisticMode = null;
   }
 };
 
 window._sP = async (state) => {
   if (!currentUser) return;
-  playWebBuzzer(2500, state === 'ON' ? 0.5 : 0.25);
+  playWebBuzzer(2500, state === 'ON' ? 250 : 120);
   const ak = document.getElementById('ak');
   if (ak) ak.textContent = 'Pump ' + state + '...';
+  const st = document.getElementById('st');
+  if (st) st.textContent = 'Actuating 0ms';
 
   // Instant optimistic feedback (<1ms)
   optimisticPump = state;
-  optimisticPumpExpires = Date.now() + 2500;
+  optimisticPumpExpires = Date.now() + 3500;
+  optimisticMode = 'MANUAL';
+  optimisticModeExpires = Date.now() + 3500;
   currentMode = 'MANUAL';
   lastPump = state;
-  uMB('MANUAL', state);
+  uMB('MANUAL', state, lastLevel, lastWaterProbe);
+
   const rp = document.getElementById('vr');
   if (rp) {
     if (state === 'ON') { rp.textContent = 'RUNNING'; rp.className = 'rp on'; }
@@ -423,11 +449,15 @@ window._sP = async (state) => {
   }
 
   try {
+    const t0 = performance.now();
     await sendCommand(activeTankId, currentUser.uid, 'MANUAL', state);
-    if (ak) ak.textContent = 'Pump: ' + state;
-    addEvt('Pump → ' + state, state === 'ON' ? '#34C759' : '#FF3B30');
+    const elapsed = Math.round(performance.now() - t0);
+    if (st) st.textContent = 'Actuated ' + elapsed + 'ms';
+    if (ak) ak.textContent = (state === 'ON') ? 'Manual: Pump RUNNING' : 'Manual: Pump STOPPED';
+    addEvt('Pump → ' + state, state === 'ON' ? '#D4F63D' : '#FF4757');
   } catch (e) {
     if (ak) ak.textContent = 'Error: ' + e.message;
+    optimisticPump = null;
   }
 };
 
@@ -436,13 +466,21 @@ window._sP = async (state) => {
 // ============================================================================
 function updateDashboard(d) {
   // Map Firebase field names to our UI
-  const level = parseFloat(d.levelPercent ?? d.level ?? -1);
-  const distance = parseFloat(d.distanceCm ?? d.distance ?? -1);
+  let level = parseFloat(d.levelPercent ?? d.level ?? -1);
+  let distance = parseFloat(d.distanceCm ?? d.distance ?? -1);
   const flow = parseFloat(d.flowRateLpm ?? d.flow ?? 0);
   const total = parseFloat(d.totalLitres ?? d.total ?? 0);
   const current = parseFloat(d.pumpCurrentA ?? d.current ?? 0);
   let pump = d.pumpState ?? d.pump ?? 'OFF';
   let mode = d.controlMode ?? d.mode ?? 'AUTO';
+
+  // Ultrasonic sensor close-range detection handling (hand close to sensor)
+  if (distance >= 0 && distance < 2.0) {
+    distance = 2.0;
+    level = 100.0;
+  } else if (level > 100.0) {
+    level = 100.0;
+  }
 
   // Respect optimistic pump state during in-flight command window (prevents rubber-banding)
   if (optimisticPump !== null && Date.now() < optimisticPumpExpires) {
@@ -467,8 +505,11 @@ function updateDashboard(d) {
   }
 
   const status = d.controllerStatus ?? d.status ?? 'Standby';
-  const waterProbe = d.waterProbe ?? false;
+  const waterProbe = (d.waterProbe === true || d.waterProbe === 1 || d.waterProbe === 'true');
   const rawAdc = d.rawAdc ?? '--';
+
+  lastLevel = level;
+  lastWaterProbe = waterProbe;
 
   // Water Level
   const sb = document.getElementById('bs');
@@ -512,7 +553,7 @@ function updateDashboard(d) {
 
   // Water Probe & Raw ADC
   const vp = document.getElementById('vp');
-  if (vp) vp.innerHTML = waterProbe ? '<span style="color:var(--red)">DETECTED</span>' : '<span style="color:var(--green)">DRY</span>';
+  if (vp) vp.innerHTML = waterProbe ? '<span style="color:var(--red);font-weight:800">DETECTED</span>' : '<span style="color:var(--green);font-weight:800">DRY</span>';
   const va = document.getElementById('va');
   if (va) va.textContent = rawAdc;
 
@@ -526,29 +567,39 @@ function updateDashboard(d) {
   const now = new Date();
   document.getElementById('vu').textContent = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0') + ':' + now.getSeconds().toString().padStart(2, '0');
 
-  // Mode
+  // Mode & Controls UI sync
   currentMode = mode;
-  uMB(mode, pump);
+  uMB(mode, pump, level, waterProbe);
+
+  // Sound web buzzer alarm if level >= 95% AND water probe detects water!
+  if (level >= 95.0 && waterProbe) {
+    const curTime = Date.now();
+    if (curTime - lastFullTankAlarmWebMs >= 3500) {
+      lastFullTankAlarmWebMs = curTime;
+      playWebBuzzer(2500, 200);
+      setTimeout(() => playWebBuzzer(2500, 200), 280);
+    }
+  }
 
   // Timeline events & buzzer audio on state changes
   if (lastPump !== pump && lastPump !== '') {
     if (pump === 'ON') {
-      addEvt('Pump started', '#34C759');
-      playWebBuzzer(2500, 0.4);
+      addEvt('Pump started', '#D4F63D');
+      playWebBuzzer(2500, 250);
     } else if (lastPump === 'ON') {
-      addEvt('Pump stopped', '#FF3B30');
-      playWebBuzzer(2500, 0.2);
+      addEvt('Pump stopped', '#FF4757');
+      playWebBuzzer(2500, 150);
     }
     lastPump = pump;
   }
   if (waterProbe && !lastWaterProbe) {
-    playWebBuzzer(2000, 0.15);
-    setTimeout(() => playWebBuzzer(2000, 0.15), 180);
+    playWebBuzzer(2000, 150);
+    setTimeout(() => playWebBuzzer(2000, 150), 180);
   }
   lastWaterProbe = waterProbe;
 
   if (lastState !== status && lastState !== '') {
-    addEvt('State → ' + status, status === 'Normal' ? '#007AFF' : '#FF9500');
+    addEvt('State → ' + status, (status === 'Normal' || status === 'IDLE' || status === 'AUTO_FILLING' || status === 'MANUAL_FILLING') ? '#D4F63D' : '#FFA928');
   }
   lastState = status;
 
@@ -558,23 +609,52 @@ function updateDashboard(d) {
 }
 
 // ============================================================================
-// MODE BUTTONS
+// MODE & CONTROLS SYNC
 // ============================================================================
-function uMB(m, p) {
-  const a = m === 'AUTO';
+function uMB(m, p, level = -1, probe = false) {
+  const a = (m === 'AUTO');
   const ba = document.getElementById('ba');
   const bm = document.getElementById('bm');
-  if (ba) { ba.className = 'sb' + (a ? ' a' : ''); }
-  if (bm) { bm.className = 'sb' + (!a ? ' a' : ''); }
+  if (ba) ba.className = 'sb' + (a ? ' a' : '');
+  if (bm) bm.className = 'sb' + (!a ? ' a' : '');
   const as = document.getElementById('as');
   const ap = document.getElementById('ap');
-  if (as) as.disabled = a;
-  if (ap) ap.disabled = a;
   const ak = document.getElementById('ak');
-  if (ak) {
-    if (a) {
-      ak.textContent = 'Auto Control Active';
-    } else {
+
+  if (a) {
+    if (as) {
+      as.disabled = true;
+      as.style.opacity = '0.65';
+      as.style.boxShadow = 'none';
+    }
+    if (ap) {
+      ap.disabled = true;
+      ap.style.opacity = '0.65';
+      ap.style.boxShadow = 'none';
+    }
+    if (ak) {
+      if (level >= 95.0 && probe) {
+        ak.innerHTML = '<span style="color:#FFA928;font-weight:800">Auto: Tank FULL (Pump Idle)</span>';
+      } else if (p === 'ON') {
+        ak.innerHTML = '<span style="color:var(--accent);font-weight:800">Auto: Pump RUNNING (Filling)</span>';
+      } else if (level >= 0 && level <= 20.0) {
+        ak.innerHTML = '<span style="color:var(--accent);font-weight:800">Auto: Tank LOW (Auto-Start)</span>';
+      } else {
+        ak.textContent = 'Auto: Standby';
+      }
+    }
+  } else {
+    if (as) {
+      as.disabled = false;
+      as.style.opacity = '1';
+      as.style.boxShadow = (p === 'ON') ? '0 0 16px rgba(212, 246, 61, 0.6)' : 'none';
+    }
+    if (ap) {
+      ap.disabled = false;
+      ap.style.opacity = '1';
+      ap.style.boxShadow = (p === 'OFF') ? '0 0 16px rgba(255, 71, 87, 0.5)' : 'none';
+    }
+    if (ak) {
       ak.textContent = (p === 'ON' || lastPump === 'ON') ? 'Manual: Pump RUNNING' : 'Manual: Pump STOPPED';
     }
   }

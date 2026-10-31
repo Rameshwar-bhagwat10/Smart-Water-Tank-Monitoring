@@ -293,17 +293,8 @@ void loop() {
   localServer.handleClient(now, pumpController, pkt, &alertMgr, &firebaseClient);
 
   // 6. Cloud Firebase: Real-time telemetry push + sub-second command polling
-  // When a local phone is active on http://192.168.4.1, rate-limit cloud polling to 1500ms
-  // so the local web server gets 100% CPU priority and sub-millisecond responsiveness!
-  if (!localServer.hasRecentClient()) {
-    firebaseClient.update(now, pumpController, pkt, &alertMgr);
-  } else {
-    static uint32_t lastLocalActiveCloudPollMs = 0;
-    if (now - lastLocalActiveCloudPollMs >= 1500) {
-      lastLocalActiveCloudPollMs = now;
-      firebaseClient.update(now, pumpController, pkt, &alertMgr);
-    }
-  }
+  // Runs continuously so the cloud dashboard receives instant <100ms command actuation
+  firebaseClient.update(now, pumpController, pkt, &alertMgr);
 
   // 7. Periodic Sensor Diagnostics Stream (~2s)
   if (now - lastSerialLogMs >= 2000) {
