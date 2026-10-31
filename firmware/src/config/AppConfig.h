@@ -105,9 +105,9 @@ constexpr float ACS712_DIVIDER_RATIO        = 1.0f;
 // ============================================================================
 // SAFETY INTERLOCKS & OPERATING THRESHOLDS
 // ============================================================================
-constexpr float AUTO_START_LEVEL_PERCENT   = 20.0f; // Turn ON at or below 20% (when in AUTO mode)
-constexpr float AUTO_STOP_LEVEL_PERCENT    = 95.0f; // Turn OFF at or above 95%
-constexpr float HARD_CUTOFF_LEVEL_PERCENT  = 95.0f; // Strict safety cutoff enforced across all modes
+constexpr float AUTO_START_LEVEL_PERCENT   = 95.0f; // Resume continuous filling below 95% (in AUTO mode)
+constexpr float AUTO_STOP_LEVEL_PERCENT    = 100.0f; // Turn OFF at 100% full
+constexpr float HARD_CUTOFF_LEVEL_PERCENT  = 100.0f; // 100% tank full cutoff
 
 constexpr uint32_t MAX_PUMP_RUNTIME_MS        = 20 * 60 * 1000UL; // 20 min max continuous runtime
 

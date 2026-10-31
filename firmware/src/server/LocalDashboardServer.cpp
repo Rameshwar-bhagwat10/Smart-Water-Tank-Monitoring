@@ -172,13 +172,21 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
     </div>
   </div>
 
-  <!-- Water Level History Chart -->
-  <div class="cd ch-wrap">
-    <div class="ch-hd">
-      <span class="ch-t">Water Level Trend</span>
-      <span class="ch-v" id="ch-lv">-- %</span>
+  <!-- Controls (Directly below water tank level box) -->
+  <div class="cd">
+    <div class="st">Control Mode</div>
+    <div class="seg">
+      <button class="sb" id="ba" onclick="sM('AUTO')">Automatic</button>
+      <button class="sb a" id="bm" onclick="sM('MANUAL')">Manual</button>
     </div>
-    <canvas id="cL" height="120"></canvas>
+    <div class="ag">
+      <button class="ab bs" id="as" onclick="sP('ON')">⚡ Start</button>
+      <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
+    </div>
+    <div class="fr">
+      <span>Status: <b id="ak">Manual: Pump STOPPED</b></span>
+      <span id="st" style="font-size:10px;font-family:monospace">Ready</span>
+    </div>
   </div>
 
   <!-- 2x2 Metrics -->
@@ -203,6 +211,15 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
       <div class="mv" style="font-size:15px;margin-top:3px" id="vs">IDLE</div>
       <div class="ms">Autonomous Interlock</div>
     </div>
+  </div>
+
+  <!-- Water Level History Chart -->
+  <div class="cd ch-wrap">
+    <div class="ch-hd">
+      <span class="ch-t">Water Level Trend</span>
+      <span class="ch-v" id="ch-lv">-- %</span>
+    </div>
+    <canvas id="cL" height="120"></canvas>
   </div>
 
   <!-- Flow Sparkline Chart -->
@@ -230,23 +247,6 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
         <div class="gi-row"><span class="gi-label">Average</span><span class="gi-val" id="ga">0.00 A</span></div>
         <div class="gi-row"><span class="gi-label">Status</span><span class="gi-val" id="gs" style="color:var(--green)">Idle</span></div>
       </div>
-    </div>
-  </div>
-
-  <!-- Controls -->
-  <div class="cd">
-    <div class="st">Control Mode</div>
-    <div class="seg">
-      <button class="sb" id="ba" onclick="sM('AUTO')">Automatic</button>
-      <button class="sb a" id="bm" onclick="sM('MANUAL')">Manual</button>
-    </div>
-    <div class="ag">
-      <button class="ab bs" id="as" onclick="sP('ON')">⚡ Start</button>
-      <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
-    </div>
-    <div class="fr">
-      <span>Status: <b id="ak">Manual: Pump STOPPED</b></span>
-      <span id="st" style="font-size:10px;font-family:monospace">Ready</span>
     </div>
   </div>
 
@@ -562,7 +562,11 @@ function uMB(m,p){
     ap.style.opacity='0.65';
     as.style.boxShadow='none';
     ap.style.boxShadow='none';
-    document.getElementById('ak').innerText='Auto Control Active';
+    if(p==='ON'){
+      document.getElementById('ak').innerText='Auto: Pump RUNNING (Filling)';
+    } else {
+      document.getElementById('ak').innerText='Auto: Tank FULL (Pump Idle)';
+    }
   } else {
     as.style.opacity='1';
     ap.style.opacity='1';
@@ -604,7 +608,12 @@ async function sM(m){
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Switched '+ms+'ms';
     cM=d.mode||m;
-    uMB(cM,lastPump);
+    const actPump=(d.pump==='ON'||d.pump==='OFF')?d.pump:lastPump;
+    lastPump=actPump;
+    uMB(cM,actPump);
+    const rp=document.getElementById('vr');
+    if(actPump==='ON'){rp.innerText='RUNNING';rp.className='rp on';}
+    else{rp.innerText='OFF';rp.className='rp off';}
     addEvt('Mode → '+cM,'#AF52DE');
   }catch(e){
     document.getElementById('ak').innerText='Error: '+(e.message||'Failed');
@@ -631,7 +640,7 @@ async function sP(s){
     document.getElementById('st').innerText='Actuated '+ms+'ms';
     document.getElementById('ak').innerText=d.success?('Manual: Pump '+d.pump):(d.reason||'Locked');
     cM=d.mode||'MANUAL';
-    if(d.pump==='ON'||d.pump==='OFF'){optPump=d.pump;}
+    if(d.pump==='ON'||d.pump==='OFF'){optPump=d.pump;lastPump=d.pump;}
     uMB(cM,d.pump);
     if(lastPump!==d.pump){
       if(d.pump==='ON')addEvt('Pump started','#D4F63D');

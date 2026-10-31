@@ -86,126 +86,51 @@ void PumpController::applyPumpAction(bool on, uint32_t currentMillis) {
 void PumpController::update(uint32_t currentMillis, float levelPercent, bool isLevelValid,
                             float flowRateLpm, float currentA, bool isStale,
                             bool isProbeWet, bool probeIsOverflowInterlock) {
-  (void)currentA; // Reserved for current-signature overload/stall checks
+  (void)flowRateLpm;
+  (void)currentA;
+  (void)probeIsOverflowInterlock;
+
   _lastLevelPercent = levelPercent;
   _lastLevelValid = isLevelValid && !isStale;
   _lastProbeWet = isProbeWet;
   _probeIsOverflowInterlock = probeIsOverflowInterlock;
 
-  // 0. Mandatory Safety Interlock 0: High-Water / Overflow Contact Probe (Enforced across ALL modes)
-  if (probeIsOverflowInterlock && isProbeWet) {
-    if (_relay.isPumpOn()) {
-      Serial.println(F("[Safety] 🛑 PUMP SHUTOFF: Contact Probe (D7) WET (Overflow Protection)!"));
-      applyPumpAction(false, currentMillis);
-    }
-    _lockout = SafetyLockout::OVERFLOW_PROBE_TRIPPED;
-    transitionTo(ControllerState::FAULT);
-    return;
-  } else if (_lockout == SafetyLockout::OVERFLOW_PROBE_TRIPPED && !isProbeWet) {
+  // 1. MANUAL Mode: Strictly operator controlled.
+  // The pump maintains whatever state the operator set (ON or OFF) until operator commands otherwise.
+  if (_mode == ControlMode::MANUAL) {
     _lockout = SafetyLockout::NONE;
-  }
-
-  // 1. Mandatory Safety Interlock 1: Sensor Failure Handling (Strictly enforced in AUTO mode)
-  if (!isLevelValid || isStale) {
-    if (_mode == ControlMode::AUTO) {
-      if (_relay.isPumpOn()) {
-        Serial.println(F("[Safety] 🛑 PUMP SHUTOFF: Ultrasonic Sensor invalid/stale in AUTO mode!"));
-        applyPumpAction(false, currentMillis);
-      }
-      _lockout = SafetyLockout::SENSOR_FAULT;
-      transitionTo(ControllerState::SENSOR_ERROR);
-      return;
-    }
-  } else {
-    // Auto-clear sensor fault lockout if valid, fresh reading returns
-    if (_lockout == SafetyLockout::SENSOR_FAULT) {
-      _lockout = SafetyLockout::NONE;
-    }
-  }
-
-  // 2. Mandatory Safety Interlock 2: High-Level Cutoff (Enforced across ALL modes)
-  if (isHardCutoffTriggered(levelPercent, _hardCutoffPct, _lastLevelValid)) {
-    if (_relay.isPumpOn()) {
-      Serial.printf("[Safety] 🛑 PUMP SHUTOFF: High-Level Cutoff reached (%.1f%% >= %.1f%%)!\n",
-        levelPercent, _hardCutoffPct);
-      applyPumpAction(false, currentMillis);
-    }
-    _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
-    transitionTo(ControllerState::FAULT);
-    return;
-  }
-
-  // Auto-clear high level lockout when level recedes safely below stop threshold
-  if (_lockout == SafetyLockout::HIGH_LEVEL_CUTOFF && levelPercent < _autoStopPct) {
-    _lockout = SafetyLockout::NONE;
-  }
-
-  // 3. Mandatory Safety Interlocks while Pump is Energized
-  if (_relay.isPumpOn()) {
-    uint32_t runningDuration = currentMillis - _pumpStartTimeMs;
-
-    // Runtime limit check (20 minutes max)
-    if (runningDuration >= _maxRuntimeMs) {
-      applyPumpAction(false, currentMillis);
-      _lockout = SafetyLockout::MAX_RUNTIME_EXCEEDED;
-      transitionTo(ControllerState::FAULT);
-      return;
-    }
-
-    // Dry-run / zero-flow detection (only when enabled and pump is running)
-    if (_dryRunEnabled && (_mode == ControlMode::AUTO || _lastLevelValid)) {
-      if (runningDuration > _dryRunGraceMs) {
-        if (flowRateLpm <= _dryRunThresholdLpm) {
-          if (_zeroFlowStartTimeMs == 0) {
-            _zeroFlowStartTimeMs = currentMillis;
-          } else if (currentMillis - _zeroFlowStartTimeMs >= _dryRunTripMs) {
-            // Sustained zero flow while pump active -> Trip dry-run shutoff
-            applyPumpAction(false, currentMillis);
-            _lockout = SafetyLockout::DRY_RUN_DETECTED;
-            transitionTo(ControllerState::FAULT);
-            return;
-          }
-        } else {
-          _zeroFlowStartTimeMs = 0; // Normal flow detected
-        }
-      }
-    }
-  }
-
-  // If safety lockout remains active, maintain relay in safe OFF state
-  if (_lockout != SafetyLockout::NONE) {
-    if (_mode == ControlMode::MANUAL && _lockout == SafetyLockout::SENSOR_FAULT) {
-      _lockout = SafetyLockout::NONE;
-    } else {
-      if (_relay.isPumpOn()) {
-        applyPumpAction(false, currentMillis);
-      }
-      transitionTo(ControllerState::FAULT);
-      return;
-    }
-  }
-
-  // 4. Operational State Machine Processing
-  if (_mode == ControlMode::AUTO) {
-    if (!_relay.isPumpOn()) {
-      if (shouldAutoStart(levelPercent, _autoStartPct, _lastLevelValid)) {
-        applyPumpAction(true, currentMillis);
-        transitionTo(ControllerState::AUTO_FILLING);
-      } else {
-        transitionTo(ControllerState::IDLE);
-      }
-    } else {
-      if (shouldAutoStop(levelPercent, _autoStopPct, _lastLevelValid)) {
-        applyPumpAction(false, currentMillis);
-        transitionTo(ControllerState::STOPPING);
-      } else {
-        transitionTo(ControllerState::AUTO_FILLING);
-      }
-    }
-  } else {
-    // MANUAL Mode
     if (_relay.isPumpOn()) {
       transitionTo(ControllerState::MANUAL_FILLING);
+    } else {
+      transitionTo(ControllerState::IDLE);
+    }
+    return;
+  }
+
+  // 2. AUTO Mode: Automatically control pump based on water level and water level sensor.
+  // If water level is 100% OR level sensor detects water (probe wet): turn OFF motor.
+  // If not: pump runs continuously in auto mode.
+  bool isFull = (isProbeWet || (_lastLevelValid && levelPercent >= 100.0f));
+
+  if (_relay.isPumpOn()) {
+    // Currently filling in AUTO mode
+    if (isFull) {
+      Serial.printf("[AutoControl] 🛑 Tank FULL: level=%.1f%%, probe=%s -> Motor OFF\n",
+        levelPercent, isProbeWet ? "WET" : "DRY");
+      applyPumpAction(false, currentMillis);
+      transitionTo(ControllerState::IDLE);
+    } else {
+      transitionTo(ControllerState::AUTO_FILLING);
+    }
+  } else {
+    // Currently stopped / idle in AUTO mode
+    // Resume continuous filling when water is not full (with small hysteresis deadband <= 95% to avoid contact chatter)
+    bool shouldStart = (!isProbeWet && (!_lastLevelValid || levelPercent <= 95.0f));
+    if (shouldStart) {
+      Serial.printf("[AutoControl] ⚡ Water needed: level=%.1f%%, probe=%s -> Motor ON\n",
+        levelPercent, isProbeWet ? "WET" : "DRY");
+      applyPumpAction(true, currentMillis);
+      transitionTo(ControllerState::AUTO_FILLING);
     } else {
       transitionTo(ControllerState::IDLE);
     }
@@ -213,73 +138,46 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
 }
 
 CommandResult PumpController::requestMode(ControlMode newMode, uint32_t currentMillis) {
-  if (_mode != newMode) {
+  _mode = newMode;
+  _lockout = SafetyLockout::NONE;
+  uint32_t nowMs = (currentMillis > 0) ? currentMillis : millis();
+
+  if (_mode == ControlMode::AUTO) {
+    // Immediately apply AUTO logic
+    bool isFull = (_lastProbeWet || (_lastLevelValid && _lastLevelPercent >= 100.0f));
+    if (isFull) {
+      applyPumpAction(false, nowMs);
+      transitionTo(ControllerState::IDLE);
+      return { true, "Auto mode active; tank full (pump idle)" };
+    } else {
+      applyPumpAction(true, nowMs);
+      transitionTo(ControllerState::AUTO_FILLING);
+      return { true, "Auto mode active; pump filling" };
+    }
+  } else {
+    // In MANUAL mode, maintain current state
     if (_relay.isPumpOn()) {
-      Serial.printf("[Safety] 🛑 PUMP FORCED OFF: Mode changed from %s to %s\n",
-        getModeString(), newMode == ControlMode::AUTO ? "AUTO" : "MANUAL");
-      applyPumpAction(false, currentMillis > 0 ? currentMillis : millis());
-      transitionTo(ControllerState::STOPPING);
-    }
-    _mode = newMode;
-    if (newMode == ControlMode::MANUAL && _lockout == SafetyLockout::SENSOR_FAULT) {
-      _lockout = SafetyLockout::NONE;
-    }
-    if (!_relay.isPumpOn()) {
+      transitionTo(ControllerState::MANUAL_FILLING);
+    } else {
       transitionTo(ControllerState::IDLE);
     }
-    return { true, "Mode updated; pump returned to safe state" };
+    return { true, "Manual mode active" };
   }
-  return { true, "Mode unchanged" };
 }
 
 CommandResult PumpController::requestManualPump(bool pumpOn, uint32_t currentMillis) {
-  if (_mode != ControlMode::MANUAL) {
-    return { false, "Command rejected: Controller is in AUTO mode. Switch to MANUAL first." };
-  }
+  _mode = ControlMode::MANUAL;
+  _lockout = SafetyLockout::NONE;
+  uint32_t nowMs = (currentMillis > 0) ? currentMillis : millis();
+
+  applyPumpAction(pumpOn, nowMs);
 
   if (pumpOn) {
-    // Interlock 0: High-water overflow contact probe
-    if (_probeIsOverflowInterlock && _lastProbeWet) {
-      _lockout = SafetyLockout::OVERFLOW_PROBE_TRIPPED;
-      transitionTo(ControllerState::FAULT);
-      return { false, "Safety lockout: Overflow contact probe is WET." };
-    }
-
-    // Interlock 1: High-water cutoff check if ultrasonic reading is valid
-    if (_lastLevelValid && _lastLevelPercent >= _hardCutoffPct) {
-      _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
-      transitionTo(ControllerState::FAULT);
-      return { false, "Safety lockout: Tank is already full (>= 95%)." };
-    }
-
-    // Clear previous transient lockouts (dry-run, max runtime, sensor fault) on manual operator start
-    // (hard high-level cutoff and overflow probe remain strictly enforced above)
-    if (_lockout == SafetyLockout::DRY_RUN_DETECTED || 
-        _lockout == SafetyLockout::MAX_RUNTIME_EXCEEDED || 
-        _lockout == SafetyLockout::SENSOR_FAULT) {
-      _lockout = SafetyLockout::NONE;
-    }
-
-    // Interlock 2: Active safety lockout
-    if (_lockout != SafetyLockout::NONE) {
-      return { false, "Safety lockout: Cannot start pump while safety fault is active." };
-    }
-
-    _lockout = SafetyLockout::NONE;
-    _relay.setPump(true);
-    _pumpStartTimeMs = currentMillis;
-    _zeroFlowStartTimeMs = 0;
-    _lastSwitchTimeMs = currentMillis;
     transitionTo(ControllerState::MANUAL_FILLING);
-    return { true, "Pump ON executed" };
+    return { true, "Manual: Pump ON executed" };
   } else {
-    _lockout = SafetyLockout::NONE;
-    _relay.setPump(false);
-    _pumpStartTimeMs = 0;
-    _zeroFlowStartTimeMs = 0;
-    _lastSwitchTimeMs = currentMillis;
     transitionTo(ControllerState::IDLE);
-    return { true, "Pump OFF executed" };
+    return { true, "Manual: Pump OFF executed" };
   }
 }
 
