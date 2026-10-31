@@ -546,8 +546,24 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
     }
   }
 
-  // Publish telemetry for primary hardware tank (smooth 1s or instantaneous post-command)
-  if (currentMillis - _lastTelemetryPublishMs >= TELEMETRY_PUBLISH_INTERVAL_MS || _lastTelemetryPublishMs == 0) {
+  // Fast instantaneous delta publish whenever water level or distance changes (>=0.5% or >=0.5cm)
+  bool isDelta = false;
+  for (size_t i = 0; i < _tanks.size(); i++) {
+    if (_tanks[i].id == _primaryTankId) {
+      float curLvl = (telemetry.levelPercent >= 0.0f) ? telemetry.levelPercent : 0.0f;
+      float curDist = (telemetry.distanceCm >= 0.0f) ? telemetry.distanceCm : 0.0f;
+      if (fabs(curLvl - _tanks[i].levelPercent) >= 0.5f || fabs(curDist - _tanks[i].distanceCm) >= 0.5f) {
+        isDelta = true;
+      }
+      break;
+    }
+  }
+
+  bool shouldPublish = (_lastTelemetryPublishMs == 0) ||
+                       (currentMillis - _lastTelemetryPublishMs >= TELEMETRY_PUBLISH_INTERVAL_MS) ||
+                       (isDelta && (currentMillis - _lastTelemetryPublishMs >= 100));
+
+  if (shouldPublish) {
     _lastTelemetryPublishMs = currentMillis;
     for (size_t i = 0; i < _tanks.size(); i++) {
       TankNode& node = _tanks[i];

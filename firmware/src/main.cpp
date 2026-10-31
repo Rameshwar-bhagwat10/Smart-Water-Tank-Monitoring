@@ -215,9 +215,9 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
-  // 1. Periodic Sensor Acquisition (~200ms non-blocking)
+  // 1. Periodic Sensor Acquisition (~80ms non-blocking ultra-fast sampling)
   static float recentPeakFlowLpm = 0.0f;
-  if (now - lastSensorUpdateMs >= 200) {
+  if (now - lastSensorUpdateMs >= 80) {
     uint32_t delta = now - lastSensorUpdateMs;
     lastSensorUpdateMs = now;
 

@@ -105,15 +105,22 @@ bool UltrasonicSensor::measure() {
   float distance = readRawDistance();
 
   if (distance < 0.0f) {
-    // If an object/hand was recently close (< 25cm), zero-echo duration indicates
-    // the hand/water is touching the transducer face (< 2cm blind zone).
-    if (_lastDistanceCm > 0.0f && _lastDistanceCm <= 25.0f) {
+    // If hand/object is placed within the transducer blind zone (< 2cm), echo pulse arrives
+    // during transducer excitation before pulseIn starts. Detect this by checking if the
+    // previous reading was in the upper tank or close range (<= 50cm):
+    if (_lastDistanceCm > 0.0f && _lastDistanceCm <= 50.0f) {
       _lastDistanceCm = MIN_VALID_DISTANCE_CM;
       _lastLevelPercent = 100.0f;
       _lastMeasureTimeMs = millis();
       _status = UltrasonicStatus::OK;
       return true;
     }
+
+    // Hold last valid reading for up to 350ms to prevent momentary flickering dropouts
+    if (_lastDistanceCm > 0.0f && (millis() - _lastMeasureTimeMs < 350)) {
+      return true;
+    }
+
     _status = UltrasonicStatus::TIMEOUT;
     _lastDistanceCm = -1.0f;
     _lastLevelPercent = -1.0f;
