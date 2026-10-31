@@ -428,16 +428,18 @@ function fmtUp(s){
 }
 
 // -- Fetch Telemetry --
-// -- Fetch Telemetry --
+let isPolling=false;
 async function poll(){
+  if(isPolling)return;
+  isPolling=true;
   try{
-    const res=await fetch('/api/live');
+    const res=await fetch('/api/live?_t='+Date.now(),{cache:'no-store'});
     if(!res.ok)return;
     const d=await res.json();
 
-    // Water Level
+    // Water Level (Display if sensor connected or valid distance returned)
     const sb=document.getElementById('bs');
-    if(d.sensorConnected&&d.level>=0){
+    if((d.sensorConnected||d.distance>=0)&&d.level>=0){
       const lv=d.level.toFixed(1);
       document.getElementById('vl').innerText=lv;
       document.getElementById('tf').style.height=Math.max(0,Math.min(100,d.level))+'%';
@@ -543,7 +545,10 @@ async function poll(){
 
     // Draw charts
     drawLevel();drawFlow();
-  }catch(e){}
+  }catch(e){
+  }finally{
+    isPolling=false;
+  }
 }
 
 function uMB(m,p){
@@ -590,11 +595,11 @@ function playWebBuzzer(f,ms){
 async function sM(m){
   playWebBuzzer(2700,120);
   document.getElementById('ak').innerText='Setting '+m+'...';
-  optMode=m;optModeExp=Date.now()+2500;
+  optMode=m;optModeExp=Date.now()+3000;
   cM=m;uMB(m,lastPump);
   try{
     const t=performance.now();
-    const r=await fetch('/api/command?mode='+encodeURIComponent(m));
+    const r=await fetch('/api/command?mode='+encodeURIComponent(m)+'&_t='+Date.now(),{cache:'no-store'});
     const d=await r.json();
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Switched '+ms+'ms';
@@ -602,7 +607,7 @@ async function sM(m){
     uMB(cM,lastPump);
     addEvt('Mode → '+cM,'#AF52DE');
   }catch(e){
-    document.getElementById('ak').innerText='Error';
+    document.getElementById('ak').innerText='Error: '+(e.message||'Failed');
     optMode=null;
   }
 }
@@ -611,8 +616,8 @@ async function sP(s){
   playWebBuzzer(2500,s==='ON'?250:120);
   document.getElementById('ak').innerText='Pump '+s+'...';
   // Instant optimistic feedback (<1ms)
-  optPump=s;optPumpExp=Date.now()+2500;
-  optMode='MANUAL';optModeExp=Date.now()+2500;
+  optPump=s;optPumpExp=Date.now()+3000;
+  optMode='MANUAL';optModeExp=Date.now()+3000;
   cM='MANUAL';
   uMB('MANUAL',s);
   const rp=document.getElementById('vr');
@@ -620,7 +625,7 @@ async function sP(s){
   else{rp.innerText='OFF';rp.className='rp off';}
   try{
     const t=performance.now();
-    const r=await fetch('/api/command?mode=MANUAL&pump='+encodeURIComponent(s));
+    const r=await fetch('/api/command?mode=MANUAL&pump='+encodeURIComponent(s)+'&_t='+Date.now(),{cache:'no-store'});
     const d=await r.json();
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Actuated '+ms+'ms';
@@ -634,7 +639,7 @@ async function sP(s){
       lastPump=d.pump;
     }
   }catch(e){
-    document.getElementById('ak').innerText='Error';
+    document.getElementById('ak').innerText='Error: '+(e.message||'Failed');
     optPump=null;
   }
 }
@@ -723,13 +728,18 @@ void LocalDashboardServer::setupRoutes() {
   _server.on("/apple-touch-icon-precomposed.png", HTTP_GET, [this]() { _server.send(204); });
   _server.on("/robots.txt", HTTP_GET, [this]() { _server.send(204); });
 
-  // High-Speed REST API
+  // High-Speed REST API (Support both with and without trailing slash)
   _server.on("/api/live", HTTP_GET, [this]() { handleApiLive(); });
+  _server.on("/api/live/", HTTP_GET, [this]() { handleApiLive(); });
   _server.on("/api/live", HTTP_OPTIONS, [this]() { handleCors(); _server.send(204); });
+  _server.on("/api/live/", HTTP_OPTIONS, [this]() { handleCors(); _server.send(204); });
 
   _server.on("/api/command", HTTP_GET, [this]() { handleApiCommand(); });
+  _server.on("/api/command/", HTTP_GET, [this]() { handleApiCommand(); });
   _server.on("/api/command", HTTP_POST, [this]() { handleApiCommand(); });
+  _server.on("/api/command/", HTTP_POST, [this]() { handleApiCommand(); });
   _server.on("/api/command", HTTP_OPTIONS, [this]() { handleCors(); _server.send(204); });
+  _server.on("/api/command/", HTTP_OPTIONS, [this]() { handleCors(); _server.send(204); });
 
   _server.onNotFound([this]() { handleNotFound(); });
 }
@@ -737,14 +747,15 @@ void LocalDashboardServer::setupRoutes() {
 void LocalDashboardServer::handleRoot() {
   _lastClientAccessMs = millis();
   handleCors();
+  _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  _server.sendHeader("Pragma", "no-cache");
+  _server.sendHeader("Expires", "0");
 
   // Send pre-compressed GZIP payload for ultra-fast load (<50ms on mobile)
   if (_server.hasHeader("Accept-Encoding") && _server.header("Accept-Encoding").indexOf("gzip") != -1) {
     _server.sendHeader("Content-Encoding", "gzip");
-    _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     _server.send_P(200, "text/html; charset=UTF-8", (const char*)DASHBOARD_HTML_GZ, DASHBOARD_HTML_GZ_LEN);
   } else {
-    _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     _server.send_P(200, "text/html; charset=UTF-8", DASHBOARD_HTML);
   }
 }
@@ -772,6 +783,9 @@ void LocalDashboardServer::handleNotFound() {
 void LocalDashboardServer::handleApiLive() {
   _lastClientAccessMs = millis();
   handleCors();
+  _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  _server.sendHeader("Pragma", "no-cache");
+  _server.sendHeader("Expires", "0");
 
   unsigned long uptimeSec = millis() / 1000UL;
 
@@ -811,6 +825,10 @@ void LocalDashboardServer::handleApiLive() {
 void LocalDashboardServer::handleApiCommand() {
   _lastClientAccessMs = millis();
   handleCors();
+  _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  _server.sendHeader("Pragma", "no-cache");
+  _server.sendHeader("Expires", "0");
+
   if (!_pumpCtrl) {
     _server.send(503, "application/json", "{\"success\":false,\"reason\":\"Controller not ready\"}");
     return;
@@ -819,9 +837,20 @@ void LocalDashboardServer::handleApiCommand() {
   String mode = _server.arg("mode");
   String pump = _server.arg("pump");
   String action = _server.arg("action");
-  mode.trim();
-  pump.trim();
-  action.trim();
+
+  // Support JSON POST body if sent as application/json
+  if (_server.hasArg("plain")) {
+    JsonDocument bodyDoc;
+    if (!deserializeJson(bodyDoc, _server.arg("plain"))) {
+      if (bodyDoc["mode"].is<const char*>()) mode = bodyDoc["mode"].as<const char*>();
+      if (bodyDoc["pump"].is<const char*>()) pump = bodyDoc["pump"].as<const char*>();
+      if (bodyDoc["action"].is<const char*>()) action = bodyDoc["action"].as<const char*>();
+    }
+  }
+
+  mode.trim(); mode.toUpperCase();
+  pump.trim(); pump.toUpperCase();
+  action.trim(); action.toUpperCase();
 
   if (pump == "BEEP" || mode == "BEEP" || action == "BEEP") {
     if (_alertMgr) {
@@ -831,8 +860,10 @@ void LocalDashboardServer::handleApiCommand() {
     return;
   }
 
-  // Mode change
-  if (mode == "AUTO") {
+  // If a manual pump command is requested, ALWAYS force MANUAL mode
+  if (pump == "ON" || pump == "1" || pump == "OFF" || pump == "0") {
+    _pumpCtrl->requestMode(ControlMode::MANUAL, millis());
+  } else if (mode == "AUTO") {
     _pumpCtrl->requestMode(ControlMode::AUTO, millis());
   } else if (mode == "MANUAL") {
     _pumpCtrl->requestMode(ControlMode::MANUAL, millis());
@@ -897,14 +928,14 @@ void LocalDashboardServer::handleApiCommand() {
   if (_alertMgr) {
     if (commandAccepted) {
       if (pump == "ON" || pump == "1") {
-        _alertMgr->playTone(2500, 100);
+        _alertMgr->playTone(2500, 350);
       } else if (pump == "OFF" || pump == "0") {
-        _alertMgr->playTone(2500, 80);
+        _alertMgr->playTone(2500, 200);
       } else if (mode.length() > 0) {
-        _alertMgr->triggerChirp(60);
+        _alertMgr->triggerChirp(120);
       }
     } else {
-      _alertMgr->playTone(2000, 80);
+      _alertMgr->playTone(2000, 150);
     }
   }
 }
