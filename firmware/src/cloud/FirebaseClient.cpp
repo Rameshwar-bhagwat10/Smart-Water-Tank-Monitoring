@@ -42,7 +42,8 @@ void FirebaseClient::addTank(const String& tankId) {
   node.id = tankId;
   node.lastProcessedCommandId[0] = '\0';
   node.baselineEstablished = false;
-  node.mode = "AUTO";
+  node.mode = DEFAULT_STARTUP_IN_MANUAL_MODE ? "MANUAL" : "AUTO";
+  node.pumpState = "OFF";
   node.levelPercent = 0.0f;
   node.distanceCm = 0.0f;
   node.totalLitres = 0.0f;
@@ -50,6 +51,22 @@ void FirebaseClient::addTank(const String& tankId) {
   node.pumpCurrentA = 0.0f;
   node.status = "IDLE";
   _tanks.push_back(node);
+}
+
+void FirebaseClient::syncLocalState(const String& mode, const String& pumpState) {
+  for (size_t i = 0; i < _tanks.size(); i++) {
+    if (_tanks[i].id == _primaryTankId) {
+      if (mode.length() > 0) {
+        _tanks[i].mode = mode;
+      }
+      if (pumpState.length() > 0) {
+        _tanks[i].pumpState = pumpState;
+      }
+      break;
+    }
+  }
+  // Immediately trigger telemetry publish on next loop cycle (<50ms)
+  _lastTelemetryPublishMs = 0;
 }
 
 void FirebaseClient::setTankId(const String& tankId) {

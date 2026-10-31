@@ -57,6 +57,7 @@ public:
   bool checkAndProcessCommands(PumpController& pumpCtrl, AlertManager* alertMgr = nullptr);
   bool sendCommandAck(const char* tankId, const char* commandId, const char* status, const char* reason = "");
   bool publishAlert(const char* tankId, const char* alertType, const char* severity, const char* message);
+  void syncLocalState(const String& mode, const String& pumpState);
 
   void addTank(const String& tankId);
   size_t getTankCount() const { return _tanks.size(); }

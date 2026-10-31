@@ -16,7 +16,7 @@ public:
   LocalDashboardServer(uint16_t port = 80);
 
   void begin(const char* tankId = "tank-01");
-  void handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr = nullptr);
+  void handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr = nullptr, FirebaseClient* fbClient = nullptr);
   bool hasRecentClient() const { return (_lastClientAccessMs > 0 && (millis() - _lastClientAccessMs < 8000)); }
   uint32_t getLastClientAccessMs() const { return _lastClientAccessMs; }
   void stop();
@@ -30,6 +30,7 @@ private:
   const TelemetryPacket* _lastTelemetry;
   PumpController* _pumpCtrl;
   AlertManager* _alertMgr;
+  FirebaseClient* _fbClient;
 
   void setupRoutes();
   void handleRoot();

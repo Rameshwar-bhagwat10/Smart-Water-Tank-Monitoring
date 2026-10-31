@@ -45,8 +45,9 @@ void AlertManager::playTone(uint16_t frequencyHz, uint16_t durationMs) {
     delayMicroseconds(halfPeriodUs);
     digitalWrite(_buzzer, LOW);
     delayMicroseconds(halfPeriodUs);
-    if ((i & 0x7F) == 0) {
+    if ((i & 0x3F) == 0) {
       ESP.wdtFeed();
+      yield();
     }
   }
 }

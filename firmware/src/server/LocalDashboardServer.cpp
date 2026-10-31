@@ -237,15 +237,15 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
   <div class="cd">
     <div class="st">Control Mode</div>
     <div class="seg">
-      <button class="sb a" id="ba" onclick="sM('AUTO')">Automatic</button>
-      <button class="sb" id="bm" onclick="sM('MANUAL')">Manual</button>
+      <button class="sb" id="ba" onclick="sM('AUTO')">Automatic</button>
+      <button class="sb a" id="bm" onclick="sM('MANUAL')">Manual</button>
     </div>
     <div class="ag">
       <button class="ab bs" id="as" onclick="sP('ON')">⚡ Start</button>
       <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
     </div>
     <div class="fr">
-      <span>Status: <b id="ak">Standby</b></span>
+      <span>Status: <b id="ak">Manual: Pump STOPPED</b></span>
       <span id="st" style="font-size:10px;font-family:monospace">Ready</span>
     </div>
   </div>
@@ -274,7 +274,8 @@ const MX=60;
 const lH=[];
 const fH=[];
 const cH=[];
-let cM='MANUAL',iS=false,pC=0.0,cS=0.0,cN=0,lastPump='OFF',lastState='IDLE';
+let cM='MANUAL',pC=0.0,cS=0.0,cN=0,lastPump='OFF',lastState='IDLE';
+let optPump=null,optPumpExp=0,optMode=null,optModeExp=0;
 const evts=[];
 
 // -- Canvas setup helpers with instant width fallback --
@@ -427,8 +428,8 @@ function fmtUp(s){
 }
 
 // -- Fetch Telemetry --
+// -- Fetch Telemetry --
 async function poll(){
-  if(iS)return;
   try{
     const res=await fetch('/api/live');
     if(!res.ok)return;
@@ -483,9 +484,27 @@ async function poll(){
     const va=document.getElementById('va');
     if(va&&d.rawAdc!==undefined){va.innerText=d.rawAdc;}
 
-    // Relay
+    // Optimistic Mode Lock
+    let m = d.mode || 'MANUAL';
+    if(optMode !== null && Date.now() < optModeExp){
+      if(m === optMode) optMode = null;
+      else m = optMode;
+    } else {
+      optMode = null;
+    }
+
+    // Optimistic Pump Lock (Prevents rubber-banding to OFF during in-flight operations)
+    let p = d.pump || 'OFF';
+    if(optPump !== null && Date.now() < optPumpExp){
+      if(p === optPump) optPump = null;
+      else p = optPump;
+    } else {
+      optPump = null;
+    }
+
+    // Relay display
     const rp=document.getElementById('vr');
-    if(d.pump==='ON'){rp.innerText='RUNNING';rp.className='rp on';}
+    if(p==='ON'){rp.innerText='RUNNING';rp.className='rp on';}
     else{rp.innerText='OFF';rp.className='rp off';}
 
     // State & Uptime
@@ -506,15 +525,15 @@ async function poll(){
       }
     }
 
-    // Mode & Button State Sync
-    cM=d.mode||'AUTO';
-    uMB(cM,d.pump);
+    // Controls sync
+    cM=m;
+    uMB(cM,p);
 
     // Timeline events
-    if(lastPump!==d.pump){
-      if(d.pump==='ON')addEvt('Pump started','#D4F63D');
-      else if(lastPump==='ON')addEvt('Pump stopped','#FF4757');
-      lastPump=d.pump;
+    if(lastPump!==p){
+      if(p==='ON')addEvt('Pump started','#D4F63D');
+      else addEvt('Pump stopped','#FF4757');
+      lastPump=p;
     }
     const st=d.status||'Standby';
     if(lastState!==st&&lastState!==''){
@@ -542,7 +561,7 @@ function uMB(m,p){
   } else {
     as.style.opacity='1';
     ap.style.opacity='1';
-    if(p==='ON'||lastPump==='ON'){
+    if(p==='ON'){
       as.style.boxShadow='0 0 16px rgba(212,246,61,0.6)';
       ap.style.boxShadow='none';
       document.getElementById('ak').innerText='Manual: Pump RUNNING';
@@ -569,9 +588,9 @@ function playWebBuzzer(f,ms){
 }
 
 async function sM(m){
-  iS=true;
-  playWebBuzzer(2700,150);
+  playWebBuzzer(2700,120);
   document.getElementById('ak').innerText='Setting '+m+'...';
+  optMode=m;optModeExp=Date.now()+2500;
   cM=m;uMB(m,lastPump);
   try{
     const t=performance.now();
@@ -579,17 +598,23 @@ async function sM(m){
     const d=await r.json();
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Switched '+ms+'ms';
-    cM=d.mode||m;lastPump=d.pump;uMB(cM,d.pump);addEvt('Mode → '+cM,'#AF52DE');poll();
-  }catch(e){document.getElementById('ak').innerText='Error';}
-  finally{iS=false;}
+    cM=d.mode||m;
+    uMB(cM,lastPump);
+    addEvt('Mode → '+cM,'#AF52DE');
+  }catch(e){
+    document.getElementById('ak').innerText='Error';
+    optMode=null;
+  }
 }
 
 async function sP(s){
-  iS=true;
-  playWebBuzzer(2500,s==='ON'?500:250);
+  playWebBuzzer(2500,s==='ON'?250:120);
   document.getElementById('ak').innerText='Pump '+s+'...';
   // Instant optimistic feedback (<1ms)
-  cM='MANUAL';lastPump=s;uMB('MANUAL',s);
+  optPump=s;optPumpExp=Date.now()+2500;
+  optMode='MANUAL';optModeExp=Date.now()+2500;
+  cM='MANUAL';
+  uMB('MANUAL',s);
   const rp=document.getElementById('vr');
   if(s==='ON'){rp.innerText='RUNNING';rp.className='rp on';}
   else{rp.innerText='OFF';rp.className='rp off';}
@@ -600,9 +625,18 @@ async function sP(s){
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Actuated '+ms+'ms';
     document.getElementById('ak').innerText=d.success?('Manual: Pump '+d.pump):(d.reason||'Locked');
-    cM=d.mode||'MANUAL';lastPump=d.pump;uMB(cM,d.pump);poll();
-  }catch(e){document.getElementById('ak').innerText='Error';}
-  finally{iS=false;}
+    cM=d.mode||'MANUAL';
+    if(d.pump==='ON'||d.pump==='OFF'){optPump=d.pump;}
+    uMB(cM,d.pump);
+    if(lastPump!==d.pump){
+      if(d.pump==='ON')addEvt('Pump started','#D4F63D');
+      else addEvt('Pump stopped','#FF4757');
+      lastPump=d.pump;
+    }
+  }catch(e){
+    document.getElementById('ak').innerText='Error';
+    optPump=null;
+  }
 }
 
 // Instant 0ms Paint & Polling Loop
@@ -622,7 +656,8 @@ LocalDashboardServer::LocalDashboardServer(uint16_t port)
     _lastClientAccessMs(0),
     _lastTelemetry(nullptr),
     _pumpCtrl(nullptr),
-    _alertMgr(nullptr) {}
+    _alertMgr(nullptr),
+    _fbClient(nullptr) {}
 
 void LocalDashboardServer::begin(const char* tankId) {
   _tankId = tankId ? tankId : "tank-01";
@@ -646,12 +681,13 @@ void LocalDashboardServer::stop() {
   }
 }
 
-void LocalDashboardServer::handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr) {
+void LocalDashboardServer::handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr, FirebaseClient* fbClient) {
   if (!_isRunning) return;
   (void)currentMillis;
   _pumpCtrl = &pumpCtrl;
   _lastTelemetry = &telemetry;
   _alertMgr = alertMgr;
+  _fbClient = fbClient;
 
   _dnsServer.processNextRequest();
   _server.handleClient();
@@ -838,22 +874,12 @@ void LocalDashboardServer::handleApiCommand() {
   Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
   Serial.println();
 
-  if (_alertMgr) {
-    if (commandAccepted) {
-      if (pump == "ON" || pump == "1") {
-        _alertMgr->playTone(2500, 600);
-      } else if (pump == "OFF" || pump == "0") {
-        _alertMgr->playTone(2500, 250);
-      } else if (mode.length() > 0) {
-        _alertMgr->triggerChirp(120);
-      }
-    } else {
-      _alertMgr->playTone(2000, 100);
-      delay(50);
-      _alertMgr->playTone(2000, 100);
-    }
+  // Synchronize state with FirebaseClient so cloud state never desyncs from local actuation
+  if (commandAccepted && _fbClient) {
+    _fbClient->syncLocalState(_pumpCtrl->getModeString(), _pumpCtrl->getPumpStateString());
   }
 
+  // Send HTTP 200 response IMMEDIATELY (<2ms) so client browser/captive portal never hangs
   char out[160];
   snprintf(out, sizeof(out), "{\"success\":%s,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\"%s%s%s}",
     commandAccepted ? "true" : "false",
@@ -866,6 +892,21 @@ void LocalDashboardServer::handleApiCommand() {
   );
   _server.sendHeader("Connection", "keep-alive");
   _server.send(200, "application/json", out);
+
+  // Play crisp tactile tone AFTER HTTP response is in-flight to prevent network latency stalls
+  if (_alertMgr) {
+    if (commandAccepted) {
+      if (pump == "ON" || pump == "1") {
+        _alertMgr->playTone(2500, 100);
+      } else if (pump == "OFF" || pump == "0") {
+        _alertMgr->playTone(2500, 80);
+      } else if (mode.length() > 0) {
+        _alertMgr->triggerChirp(60);
+      }
+    } else {
+      _alertMgr->playTone(2000, 80);
+    }
+  }
 }
 
 } // namespace SmartTank

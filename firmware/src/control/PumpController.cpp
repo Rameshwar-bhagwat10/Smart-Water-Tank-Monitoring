@@ -74,9 +74,12 @@ void PumpController::applyPumpAction(bool on, uint32_t currentMillis) {
   if (on) {
     _pumpStartTimeMs = currentMillis;
     _zeroFlowStartTimeMs = 0;
+    Serial.printf("[PumpController] ⚡ RELAY ENERGIZED (ON) at %lu ms\n", (unsigned long)currentMillis);
   } else {
     _pumpStartTimeMs = 0;
     _zeroFlowStartTimeMs = 0;
+    Serial.printf("[PumpController] 🛑 RELAY DE-ENERGIZED (OFF) at %lu ms | State: %s | Lockout: %s\n",
+      (unsigned long)currentMillis, getStateString(), getLockoutString());
   }
 }
 
@@ -92,6 +95,7 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
   // 0. Mandatory Safety Interlock 0: High-Water / Overflow Contact Probe (Enforced across ALL modes)
   if (probeIsOverflowInterlock && isProbeWet) {
     if (_relay.isPumpOn()) {
+      Serial.println(F("[Safety] 🛑 PUMP SHUTOFF: Contact Probe (D7) WET (Overflow Protection)!"));
       applyPumpAction(false, currentMillis);
     }
     _lockout = SafetyLockout::OVERFLOW_PROBE_TRIPPED;
@@ -105,6 +109,7 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
   if (!isLevelValid || isStale) {
     if (_mode == ControlMode::AUTO) {
       if (_relay.isPumpOn()) {
+        Serial.println(F("[Safety] 🛑 PUMP SHUTOFF: Ultrasonic Sensor invalid/stale in AUTO mode!"));
         applyPumpAction(false, currentMillis);
       }
       _lockout = SafetyLockout::SENSOR_FAULT;
@@ -121,6 +126,8 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
   // 2. Mandatory Safety Interlock 2: High-Level Cutoff (Enforced across ALL modes)
   if (isHardCutoffTriggered(levelPercent, _hardCutoffPct, _lastLevelValid)) {
     if (_relay.isPumpOn()) {
+      Serial.printf("[Safety] 🛑 PUMP SHUTOFF: High-Level Cutoff reached (%.1f%% >= %.1f%%)!\n",
+        levelPercent, _hardCutoffPct);
       applyPumpAction(false, currentMillis);
     }
     _lockout = SafetyLockout::HIGH_LEVEL_CUTOFF;
@@ -208,6 +215,8 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
 CommandResult PumpController::requestMode(ControlMode newMode, uint32_t currentMillis) {
   if (_mode != newMode) {
     if (_relay.isPumpOn()) {
+      Serial.printf("[Safety] 🛑 PUMP FORCED OFF: Mode changed from %s to %s\n",
+        getModeString(), newMode == ControlMode::AUTO ? "AUTO" : "MANUAL");
       applyPumpAction(false, currentMillis > 0 ? currentMillis : millis());
       transitionTo(ControllerState::STOPPING);
     }

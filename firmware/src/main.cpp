@@ -277,7 +277,7 @@ void loop() {
   pkt.timestampMs = now;
 
   // 5. Serve Direct Phone Connections at http://192.168.4.1 (Maximum Priority)
-  localServer.handleClient(now, pumpController, pkt, &alertMgr);
+  localServer.handleClient(now, pumpController, pkt, &alertMgr, &firebaseClient);
 
   // 6. Cloud Firebase: Real-time telemetry push + sub-second command polling
   firebaseClient.update(now, pumpController, pkt, &alertMgr);
