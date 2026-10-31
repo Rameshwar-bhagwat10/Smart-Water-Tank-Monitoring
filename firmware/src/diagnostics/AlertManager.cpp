@@ -35,10 +35,36 @@ void AlertManager::triggerChirp(uint16_t durationMs) {
   playTone(2700, durationMs);
 }
 
+void AlertManager::triggerFullTankAlarm() {
+  if (_buzzer == 255) return;
+  // Distinct loud high-priority double pulse for tank full & probe wet
+  playTone(2500, 200);
+  delay(80);
+  playTone(2500, 200);
+}
+
+void AlertManager::triggerModeSwitchChirp() {
+  if (_buzzer == 255) return;
+  playTone(2700, 150);
+}
+
 void AlertManager::playTone(uint16_t frequencyHz, uint16_t durationMs) {
-  if (_buzzer == 255 || frequencyHz == 0) return;
-  uint32_t halfPeriodUs = 1000000UL / (frequencyHz * 2);
-  uint32_t cycles = (static_cast<uint32_t>(durationMs) * 1000UL) / (halfPeriodUs * 2);
+  if (_buzzer == 255 || durationMs == 0) return;
+
+  // Universal Dual-Drive Audio Signal (Works on BOTH Active and Passive Buzzers):
+  // 1. DC HIGH phase directly powers Active Buzzers at maximum resonant acoustic volume
+  // 2. Square-wave modulation phase oscillates Passive Buzzers at frequencyHz
+  uint32_t activeMs = (durationMs > 60) ? (durationMs / 2) : durationMs;
+  digitalWrite(_buzzer, HIGH);
+  uint32_t t0 = millis();
+  while (millis() - t0 < activeMs) {
+    delay(1);
+    yield();
+  }
+  digitalWrite(_buzzer, LOW);
+
+  uint32_t halfPeriodUs = (frequencyHz > 0) ? (1000000UL / (frequencyHz * 2)) : 200;
+  uint32_t cycles = (static_cast<uint32_t>(durationMs - activeMs) * 1000UL) / (halfPeriodUs * 2);
 
   for (uint32_t i = 0; i < cycles; ++i) {
     digitalWrite(_buzzer, HIGH);
@@ -50,6 +76,7 @@ void AlertManager::playTone(uint16_t frequencyHz, uint16_t durationMs) {
       yield();
     }
   }
+  digitalWrite(_buzzer, LOW);
 }
 
 void AlertManager::update(uint32_t currentMillis, bool wifiConnected, bool pumpRunning, SafetyLockout lockout) {

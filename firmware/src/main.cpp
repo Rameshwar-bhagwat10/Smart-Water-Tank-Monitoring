@@ -252,6 +252,19 @@ void loop() {
   // 3. Local LED and Buzzer Status Feedback
   alertMgr.update(now, wifiConnected, isPumpRunning, currentLockout);
 
+  // Full Tank Alarm: Sound buzzer when water reaches above 95% AND level sensor detects water!
+  static uint32_t lastFullTankAlarmMs = 0;
+  bool isTankFullAndProbeWet = (levelPercent >= 95.0f && probeDetected);
+  if (isTankFullAndProbeWet) {
+    if (now - lastFullTankAlarmMs >= 3500) {
+      lastFullTankAlarmMs = now;
+      Serial.printf("[Alarm] 🚨 FULL TANK ALERT: Level=%.1f%% >= 95%% and Probe DETECTED! Sounding Buzzer!\n", levelPercent);
+      alertMgr.triggerFullTankAlarm();
+    }
+  } else {
+    lastFullTankAlarmMs = 0;
+  }
+
   // 4. Prepare Telemetry Packet
   SmartTank::TelemetryPacket pkt;
   pkt.levelPercent = levelPercent;

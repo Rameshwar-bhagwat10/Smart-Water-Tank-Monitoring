@@ -585,19 +585,35 @@ function uMB(m,p){
 let aCtx=null;
 function playWebBuzzer(f,ms){
   try{
-    if(!aCtx)aCtx=new(window.AudioContext||window.webkitAudioContext)();
-    if(aCtx.state==='suspended')aCtx.resume();
-    const o=aCtx.createOscillator(),g=aCtx.createGain();
-    o.type='square';o.frequency.setValueAtTime(f||2500,aCtx.currentTime);
-    g.gain.setValueAtTime(0.2,aCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,aCtx.currentTime+(ms||200)/1000);
-    o.connect(g);g.connect(aCtx.destination);
-    o.start();o.stop(aCtx.currentTime+(ms||200)/1000);
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    if(!aCtx)aCtx=new AC();
+    const play=()=>{
+      try{
+        const now=aCtx.currentTime;
+        const dur=(ms||200)/1000;
+        const o=aCtx.createOscillator();
+        const g=aCtx.createGain();
+        o.type='square';
+        o.frequency.setValueAtTime(f||2500,now);
+        g.gain.setValueAtTime(0.25,now);
+        g.gain.linearRampToValueAtTime(0.01,now+dur);
+        o.connect(g);
+        g.connect(aCtx.destination);
+        o.start(now);
+        o.stop(now+dur);
+      }catch(err){}
+    };
+    if(aCtx.state==='suspended'){
+      aCtx.resume().then(play).catch(()=>{});
+    }else{
+      play();
+    }
   }catch(e){}
 }
 
 async function sM(m){
-  playWebBuzzer(2700,120);
+  playWebBuzzer(2700,150);
   document.getElementById('ak').innerText='Setting '+m+'...';
   optMode=m;optModeExp=Date.now()+3000;
   cM=m;uMB(m,lastPump);
@@ -941,7 +957,7 @@ void LocalDashboardServer::handleApiCommand() {
       } else if (pump == "OFF" || pump == "0") {
         _alertMgr->playTone(2500, 200);
       } else if (mode.length() > 0) {
-        _alertMgr->triggerChirp(120);
+        _alertMgr->triggerModeSwitchChirp();
       }
     } else {
       _alertMgr->playTone(2000, 150);

@@ -47,15 +47,27 @@ float UltrasonicSensor::calculateLevelPercent(float distanceCm, float emptyDista
     return -1.0f;
   }
 
-  if (distanceCm < MIN_VALID_DISTANCE_CM || distanceCm > MAX_VALID_DISTANCE_CM) {
+  // Reject physically impossible negative or out-of-range (>400cm) readings
+  if (distanceCm < 0.0f || distanceCm > MAX_VALID_DISTANCE_CM) {
     isValid = false;
     return -1.0f;
   }
 
   isValid = true;
+
+  // When hand/water is at or closer than full threshold (<= 15cm), tank is 100% FULL
+  if (distanceCm <= fullDistanceCm) {
+    return 100.0f;
+  }
+
+  // When distance is at or further than empty threshold (>= 100cm), tank is 0% EMPTY
+  if (distanceCm >= emptyDistanceCm) {
+    return 0.0f;
+  }
+
+  // Linear proportional level between empty (0%) and full (100%)
   float level = 100.0f * (emptyDistanceCm - distanceCm) / (emptyDistanceCm - fullDistanceCm);
 
-  // Clamp within 0% to 100%
   if (level < 0.0f) level = 0.0f;
   if (level > 100.0f) level = 100.0f;
   return level;
@@ -64,15 +76,15 @@ float UltrasonicSensor::calculateLevelPercent(float distanceCm, float emptyDista
 float UltrasonicSensor::readRawDistance() {
   // Clear trigger
   digitalWrite(_trigPin, LOW);
-  delayMicroseconds(2);
+  delayMicroseconds(4);
 
-  // 10 microsecond pulse
+  // 10 microsecond trigger pulse
   digitalWrite(_trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(_trigPin, LOW);
 
-  // Acoustic range ~300 cm -> 18000 microseconds round-trip at 343 m/s
-  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 18000;
+  // Acoustic range ~400 cm -> 25000 microseconds round-trip at 343 m/s
+  constexpr unsigned long MAX_ECHO_TIMEOUT_US = 25000;
   unsigned long duration = pulseIn(_echoPin, HIGH, MAX_ECHO_TIMEOUT_US);
 
   if (duration == 0) {
@@ -90,47 +102,27 @@ bool UltrasonicSensor::measure() {
     return false;
   }
 
-  // Quick 1st sample: if disconnected, abort immediately to avoid blocking CPU
-  float d0 = readRawDistance();
-  if (d0 < 0) {
-    _status = UltrasonicStatus::TIMEOUT;
-    _lastDistanceCm = -1.0f;
-    _lastLevelPercent = -1.0f;
-    return false;
-  }
+  float distance = readRawDistance();
 
-  // If sensor is connected, take 2 more fast samples for median filtering
-  float samples[3];
-  samples[0] = d0;
-  int validCount = 1;
-
-  for (int i = 1; i < 3; ++i) {
-    delayMicroseconds(600);
-    float d = readRawDistance();
-    if (d >= MIN_VALID_DISTANCE_CM && d <= MAX_VALID_DISTANCE_CM) {
-      samples[validCount++] = d;
+  if (distance < 0.0f) {
+    // If an object/hand was recently close (< 25cm), zero-echo duration indicates
+    // the hand/water is touching the transducer face (< 2cm blind zone).
+    if (_lastDistanceCm > 0.0f && _lastDistanceCm <= 25.0f) {
+      _lastDistanceCm = MIN_VALID_DISTANCE_CM;
+      _lastLevelPercent = 100.0f;
+      _lastMeasureTimeMs = millis();
+      _status = UltrasonicStatus::OK;
+      return true;
     }
-  }
-
-  if (validCount == 0) {
     _status = UltrasonicStatus::TIMEOUT;
     _lastDistanceCm = -1.0f;
     _lastLevelPercent = -1.0f;
     return false;
   }
 
-  // Select median or average of valid samples
-  float distance = 0.0f;
-  if (validCount == 1) {
-    distance = samples[0];
-  } else if (validCount == 2) {
-    distance = (samples[0] + samples[1]) / 2.0f;
-  } else {
-    // Simple sort for 3 elements
-    if (samples[0] > samples[1]) std::swap(samples[0], samples[1]);
-    if (samples[1] > samples[2]) std::swap(samples[1], samples[2]);
-    if (samples[0] > samples[1]) std::swap(samples[0], samples[1]);
-    distance = samples[1]; // Median
+  // If distance is closer than physical minimum, clamp to minimum distance
+  if (distance < MIN_VALID_DISTANCE_CM) {
+    distance = MIN_VALID_DISTANCE_CM;
   }
 
   bool valid = false;

@@ -107,16 +107,17 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
     return;
   }
 
-  // 2. AUTO Mode: Automatically control pump based on water level and water level sensor.
-  // If water level is 100% OR level sensor detects water (probe wet): turn OFF motor.
-  // If not: pump runs continuously in auto mode.
-  bool isFull = (isProbeWet || (_lastLevelValid && levelPercent >= 100.0f));
+  // 2. AUTO Mode: Automatically control pump based on water level and level sensor.
+  // "when the tank level is above the 95% and the level sensor detect the water then and then only the pump will get off,
+  // and if water reacher to the below 20% then the pump will get on automatically"
+  bool shouldStop = (levelPercent >= 95.0f && isProbeWet);
+  bool shouldStart = (levelPercent <= 20.0f);
 
   if (_relay.isPumpOn()) {
     // Currently filling in AUTO mode
-    if (isFull) {
-      Serial.printf("[AutoControl] 🛑 Tank FULL: level=%.1f%%, probe=%s -> Motor OFF\n",
-        levelPercent, isProbeWet ? "WET" : "DRY");
+    // "then and then only the pump will get off" when level >= 95% AND probe detects water
+    if (shouldStop) {
+      Serial.printf("[AutoControl] 🛑 Tank FULL: level=%.1f%% >= 95%% and probe=WET -> Motor OFF\n", levelPercent);
       applyPumpAction(false, currentMillis);
       transitionTo(ControllerState::IDLE);
     } else {
@@ -124,11 +125,9 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
     }
   } else {
     // Currently stopped / idle in AUTO mode
-    // Resume continuous filling when water is not full (with small hysteresis deadband <= 95% to avoid contact chatter)
-    bool shouldStart = (!isProbeWet && (!_lastLevelValid || levelPercent <= 95.0f));
+    // "and if water reacher to the below 20% then the pump will get on automatically"
     if (shouldStart) {
-      Serial.printf("[AutoControl] ⚡ Water needed: level=%.1f%%, probe=%s -> Motor ON\n",
-        levelPercent, isProbeWet ? "WET" : "DRY");
+      Serial.printf("[AutoControl] ⚡ Water LOW: level=%.1f%% <= 20%% -> Motor ON\n", levelPercent);
       applyPumpAction(true, currentMillis);
       transitionTo(ControllerState::AUTO_FILLING);
     } else {
@@ -143,16 +142,23 @@ CommandResult PumpController::requestMode(ControlMode newMode, uint32_t currentM
   uint32_t nowMs = (currentMillis > 0) ? currentMillis : millis();
 
   if (_mode == ControlMode::AUTO) {
-    // Immediately apply AUTO logic
-    bool isFull = (_lastProbeWet || (_lastLevelValid && _lastLevelPercent >= 100.0f));
-    if (isFull) {
+    bool shouldStop = (_lastLevelPercent >= 95.0f && _lastProbeWet);
+    bool shouldStart = (_lastLevelPercent <= 20.0f);
+    if (shouldStop) {
       applyPumpAction(false, nowMs);
       transitionTo(ControllerState::IDLE);
       return { true, "Auto mode active; tank full (pump idle)" };
-    } else {
+    } else if (shouldStart) {
       applyPumpAction(true, nowMs);
       transitionTo(ControllerState::AUTO_FILLING);
-      return { true, "Auto mode active; pump filling" };
+      return { true, "Auto mode active; level low (pump filling)" };
+    } else {
+      if (_relay.isPumpOn()) {
+        transitionTo(ControllerState::AUTO_FILLING);
+      } else {
+        transitionTo(ControllerState::IDLE);
+      }
+      return { true, "Auto mode active" };
     }
   } else {
     // In MANUAL mode, maintain current state
