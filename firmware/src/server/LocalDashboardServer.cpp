@@ -1,5 +1,6 @@
 #include "LocalDashboardServer.h"
 #include "LocalDashboardGzip.h"
+#include "../diagnostics/AlertManager.h"
 
 namespace SmartTank {
 
@@ -243,6 +244,7 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
       <button class="ab bs" id="as" onclick="sP('ON')">⚡ Start</button>
       <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
     </div>
+    <button class="ab" id="ab-beep" onclick="sB()" style="width:100%;margin-top:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);font-size:12px;font-weight:600;padding:8px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">🔊 Test Buzzer (1s Beep)</button>
     <div class="fr">
       <span>Status: <b id="ak">Standby</b></span>
       <span id="st" style="font-size:10px;font-family:monospace">Ready</span>
@@ -553,8 +555,23 @@ function uMB(m,p){
   }
 }
 
+let aCtx=null;
+function playWebBuzzer(f,ms){
+  try{
+    if(!aCtx)aCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(aCtx.state==='suspended')aCtx.resume();
+    const o=aCtx.createOscillator(),g=aCtx.createGain();
+    o.type='square';o.frequency.setValueAtTime(f||2500,aCtx.currentTime);
+    g.gain.setValueAtTime(0.2,aCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,aCtx.currentTime+(ms||200)/1000);
+    o.connect(g);g.connect(aCtx.destination);
+    o.start();o.stop(aCtx.currentTime+(ms||200)/1000);
+  }catch(e){}
+}
+
 async function sM(m){
   iS=true;
+  playWebBuzzer(2700,150);
   document.getElementById('ak').innerText='Setting '+m+'...';
   cM=m;uMB(m,lastPump);
   try{
@@ -570,6 +587,7 @@ async function sM(m){
 
 async function sP(s){
   iS=true;
+  playWebBuzzer(2500,s==='ON'?500:250);
   document.getElementById('ak').innerText='Pump '+s+'...';
   // Instant optimistic feedback (<1ms)
   cM='MANUAL';lastPump=s;uMB('MANUAL',s);
@@ -588,6 +606,18 @@ async function sP(s){
   finally{iS=false;}
 }
 
+async function sB(){
+  playWebBuzzer(2500,1000);
+  document.getElementById('ak').innerText='Buzzer 1s Beep...';
+  try{
+    await fetch('/api/command?pump=BEEP');
+    document.getElementById('ak').innerText='Buzzer beeped!';
+    setTimeout(()=>{document.getElementById('ak').innerText='Ready';},2000);
+  }catch(e){
+    document.getElementById('ak').innerText='Beep Failed';
+  }
+}
+
 // Instant 0ms Paint & Polling Loop
 function renderAll(){drawLevel();drawFlow();drawGauge(0);renderTL();}
 window.addEventListener('resize',renderAll);
@@ -604,7 +634,8 @@ LocalDashboardServer::LocalDashboardServer(uint16_t port)
     _tankId("tank-01"),
     _lastClientAccessMs(0),
     _lastTelemetry(nullptr),
-    _pumpCtrl(nullptr) {}
+    _pumpCtrl(nullptr),
+    _alertMgr(nullptr) {}
 
 void LocalDashboardServer::begin(const char* tankId) {
   _tankId = tankId ? tankId : "tank-01";
@@ -628,11 +659,12 @@ void LocalDashboardServer::stop() {
   }
 }
 
-void LocalDashboardServer::handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry) {
+void LocalDashboardServer::handleClient(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr) {
   if (!_isRunning) return;
   (void)currentMillis;
   _pumpCtrl = &pumpCtrl;
   _lastTelemetry = &telemetry;
+  _alertMgr = alertMgr;
 
   _dnsServer.processNextRequest();
   _server.handleClient();
@@ -763,8 +795,18 @@ void LocalDashboardServer::handleApiCommand() {
 
   String mode = _server.arg("mode");
   String pump = _server.arg("pump");
+  String action = _server.arg("action");
   mode.trim();
   pump.trim();
+  action.trim();
+
+  if (pump == "BEEP" || mode == "BEEP" || action == "BEEP") {
+    if (_alertMgr) {
+      _alertMgr->playTone(2500, 1000);
+    }
+    _server.send(200, "application/json", "{\"success\":true,\"action\":\"BEEP\",\"status\":\"Buzzer 1000ms tone executed\"}");
+    return;
+  }
 
   // Mode change
   if (mode == "AUTO") {
@@ -808,6 +850,22 @@ void LocalDashboardServer::handleApiCommand() {
   Serial.printf(  "║   Safety Lockout : %-49s ║\n", _pumpCtrl->getLockoutString());
   Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
   Serial.println();
+
+  if (_alertMgr) {
+    if (commandAccepted) {
+      if (pump == "ON" || pump == "1") {
+        _alertMgr->playTone(2500, 600);
+      } else if (pump == "OFF" || pump == "0") {
+        _alertMgr->playTone(2500, 250);
+      } else if (mode.length() > 0) {
+        _alertMgr->triggerChirp(120);
+      }
+    } else {
+      _alertMgr->playTone(2000, 100);
+      delay(50);
+      _alertMgr->playTone(2000, 100);
+    }
+  }
 
   char out[160];
   snprintf(out, sizeof(out), "{\"success\":%s,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\"%s%s%s}",

@@ -21,17 +21,21 @@ export function listenToTelemetry(tankId, callback) {
 /**
  * Send a command to the tank (mode change, pump control)
  */
-export async function sendCommand(tankId, userId, mode, pumpState) {
+export async function sendCommand(tankId, userId, mode, pumpState, action = null) {
   if (!isConfigured) throw new Error('Firebase not configured');
   const commandRef = ref(db, `tanks/${tankId}/commands`);
   const commandId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-  await set(commandRef, {
+  const payload = {
     commandId: commandId,
     requestedMode: mode,
     requestedPumpState: pumpState,
     requestedAt: Date.now(),
     requestedBy: userId
-  });
+  };
+  if (action) {
+    payload.action = action;
+  }
+  await set(commandRef, payload);
   return commandId;
 }
 

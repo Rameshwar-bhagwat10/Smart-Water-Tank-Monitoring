@@ -17,8 +17,39 @@ let currentMode = 'AUTO';
 // -- Data history buffers (rolling 60 points) --
 const MX = 60;
 const lH = [], fH = [], cH = [];
-let pC = 0, cS = 0, cN = 0, lastPump = '', lastState = '';
+let pC = 0, cS = 0, cN = 0, lastPump = '', lastState = '', lastWaterProbe = false;
 const evts = [];
+
+// ============================================================================
+// WEB AUDIO BUZZER SOUND ENGINE (Emulates 2.5kHz hardware piezo buzzer)
+// ============================================================================
+let audioCtx = null;
+let buzzerMuted = false;
+
+function playWebBuzzer(freq = 2500, durationSec = 0.2, type = 'square') {
+  if (buzzerMuted) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationSec);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + durationSec);
+  } catch (e) {}
+}
+
+window._toggleSound = () => {
+  buzzerMuted = !buzzerMuted;
+  const btn = document.getElementById('soundBtn');
+  if (btn) btn.textContent = buzzerMuted ? '🔇 Sound OFF' : '🔔 Sound ON';
+  if (!buzzerMuted) playWebBuzzer(2500, 0.15);
+};
 
 // Handle unconfigured Firebase setup immediately
 if (!isConfigured) {
@@ -226,6 +257,9 @@ function showDashboard() {
         <div class="hd-t">Water Tank</div>
       </div>
       <div class="hd-right">
+        <button class="logout-btn" id="soundBtn" onclick="window._toggleSound()" style="padding:5px 10px;font-size:11px;gap:4px">
+          🔔 Sound ON
+        </button>
         <div class="hd-b" id="connBadge"><span class="dp"></span> Cloud Live</div>
         <button class="logout-btn" onclick="window._logout()">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -321,6 +355,9 @@ function showDashboard() {
         <button class="ab bs" id="as" disabled onclick="window._sP('ON')">⚡ Start</button>
         <button class="ab bp" id="ap" disabled onclick="window._sP('OFF')">🛑 Stop</button>
       </div>
+      <button class="ab" id="ab-beep" onclick="window._beep()" style="width:100%;margin-top:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);font-size:12px;font-weight:600;padding:8px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+        🔊 Test Buzzer (1s Beep)
+      </button>
       <div class="fr">
         <span>Status: <b id="ak">Standby</b></span>
         <span id="st" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-sec)">Firebase RTDB</span>
@@ -361,6 +398,7 @@ window._logout = async () => {
 
 window._sM = async (mode) => {
   if (!currentUser) return;
+  playWebBuzzer(2700, 0.15);
   const ak = document.getElementById('ak');
   ak.textContent = 'Setting ' + mode + '...';
   try {
@@ -376,6 +414,7 @@ window._sM = async (mode) => {
 
 window._sP = async (state) => {
   if (!currentUser) return;
+  playWebBuzzer(2500, state === 'ON' ? 0.5 : 0.25);
   const ak = document.getElementById('ak');
   ak.textContent = 'Pump ' + state + '...';
   try {
@@ -384,6 +423,21 @@ window._sP = async (state) => {
     addEvt('Pump → ' + state, state === 'ON' ? '#34C759' : '#FF3B30');
   } catch (e) {
     ak.textContent = 'Error: ' + e.message;
+  }
+};
+
+window._beep = async () => {
+  if (!currentUser) return;
+  playWebBuzzer(2500, 1.0);
+  const ak = document.getElementById('ak');
+  if (ak) ak.textContent = 'Buzzer 1s Beep...';
+  try {
+    await sendCommand(activeTankId, currentUser.uid, currentMode, 'BEEP', 'BEEP');
+    if (ak) ak.textContent = 'Buzzer Beep Sent!';
+    addEvt('Buzzer test tone triggered', '#D4F63D');
+    setTimeout(() => { if (ak && ak.textContent === 'Buzzer Beep Sent!') ak.textContent = 'Ready'; }, 2000);
+  } catch (e) {
+    if (ak) ak.textContent = 'Error: ' + e.message;
   }
 };
 
@@ -463,12 +517,23 @@ function updateDashboard(d) {
   currentMode = mode;
   uMB(mode);
 
-  // Timeline events
-  if (lastPump !== pump) {
-    if (pump === 'ON') addEvt('Pump started', '#34C759');
-    else if (lastPump === 'ON') addEvt('Pump stopped', '#FF3B30');
+  // Timeline events & buzzer audio on state changes
+  if (lastPump !== pump && lastPump !== '') {
+    if (pump === 'ON') {
+      addEvt('Pump started', '#34C759');
+      playWebBuzzer(2500, 0.4);
+    } else if (lastPump === 'ON') {
+      addEvt('Pump stopped', '#FF3B30');
+      playWebBuzzer(2500, 0.2);
+    }
     lastPump = pump;
   }
+  if (waterProbe && !lastWaterProbe) {
+    playWebBuzzer(2000, 0.15);
+    setTimeout(() => playWebBuzzer(2000, 0.15), 180);
+  }
+  lastWaterProbe = waterProbe;
+
   if (lastState !== status && lastState !== '') {
     addEvt('State → ' + status, status === 'Normal' ? '#007AFF' : '#FF9500');
   }

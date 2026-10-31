@@ -42,17 +42,19 @@ struct TankNode {
   String status;
 };
 
+class AlertManager;
+
 class FirebaseClient {
 public:
   FirebaseClient(const String& host, const String& authKey, const String& defaultTankId, const String& deviceUid);
 
   void begin(const String& wifiSsid, const String& wifiPassword);
-  void update(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry);
+  void update(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr = nullptr);
 
   bool isWifiConnected() const;
   bool publishTelemetry(const TelemetryPacket& telemetry);
   bool publishTelemetryForTank(const String& tankId, const TelemetryPacket& telemetry, const String& mode, const String& pumpState);
-  bool checkAndProcessCommands(PumpController& pumpCtrl);
+  bool checkAndProcessCommands(PumpController& pumpCtrl, AlertManager* alertMgr = nullptr);
   bool sendCommandAck(const char* tankId, const char* commandId, const char* status, const char* reason = "");
   bool publishAlert(const char* tankId, const char* alertType, const char* severity, const char* message);
 

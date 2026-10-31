@@ -1,5 +1,6 @@
 #include "FirebaseClient.h"
 #include "../config/AppConfig.h"
+#include "../diagnostics/AlertManager.h"
 
 namespace SmartTank {
 
@@ -197,7 +198,7 @@ bool FirebaseClient::publishTelemetry(const TelemetryPacket& telemetry) {
   return publishTelemetryForTank(_primaryTankId, telemetry, "", "");
 }
 
-bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
+bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl, AlertManager* alertMgr) {
   if (!isWifiConnected()) return false;
 
   bool anyProcessed = false;
@@ -240,6 +241,7 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
     const char* cmdId = doc["commandId"] | "";
     const char* reqMode = doc["requestedMode"] | "";
     const char* reqState = doc["requestedPumpState"] | "";
+    const char* reqAction = doc["action"] | "";
     const char* reqBy = doc["requestedBy"] | "CloudUser";
     double requestedAt = doc["requestedAt"] | 0.0;
 
@@ -292,6 +294,21 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
     Serial.printf(  "║  Pump Request : %-50s ║\n", reqState);
     Serial.printf(  "║  Requested By : %-50s ║\n", reqBy);
 
+    // Check for direct Buzzer Test command
+    if (strcmp(reqAction, "BEEP") == 0 || strcmp(reqState, "BEEP") == 0) {
+      Serial.println(F("║  Action       : APPLIED (Buzzer 1000ms Test Beep)                  ║"));
+      sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Buzzer beeped 1000ms");
+      if (alertMgr) {
+        alertMgr->playTone(2500, 1000);
+      }
+      Serial.println(F("╚════════════════════════════════════════════════════════════════════╝"));
+      Serial.println();
+      strncpy(node.lastProcessedCommandId, cmdId, sizeof(node.lastProcessedCommandId) - 1);
+      node.lastProcessedCommandId[sizeof(node.lastProcessedCommandId) - 1] = '\0';
+      anyProcessed = true;
+      continue;
+    }
+
     // Apply Command
     node.mode = reqMode;
     node.pumpState = reqState;
@@ -305,16 +322,29 @@ bool FirebaseClient::checkAndProcessCommands(PumpController& pumpCtrl) {
         node.status = reqPumpOn ? "MANUAL_FILLING" : "STANDBY";
         Serial.printf("║  Action       : APPLIED (Relay %s)%-32s ║\n", reqPumpOn ? "ON" : "OFF", "");
         sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Relay actuated");
+        if (alertMgr) {
+          alertMgr->playTone(2500, reqPumpOn ? 600 : 300);
+        }
       } else {
         node.status = "FAULT";
         Serial.printf("║  Action       : REJECTED (%s)%-25s ║\n", res.reason ? res.reason : "Locked", "");
         sendCommandAck(node.id.c_str(), cmdId, "REJECTED", res.reason ? res.reason : "Safety lockout");
+        if (alertMgr) {
+          alertMgr->playTone(2000, 100);
+          delay(50);
+          alertMgr->playTone(2000, 100);
+        }
       }
     } else {
       pumpCtrl.requestMode(ControlMode::AUTO);
       node.status = "AUTO_IDLE";
       Serial.println(F("║  Action       : APPLIED (Switched to AUTO Mode)                    ║"));
       sendCommandAck(node.id.c_str(), cmdId, "APPLIED", "Switched to AUTO mode");
+      if (alertMgr) {
+        alertMgr->playTone(2700, 150);
+        delay(50);
+        alertMgr->playTone(3000, 150);
+      }
     }
 
     Serial.println(F("╚════════════════════════════════════════════════════════════════════╝"));
@@ -485,7 +515,7 @@ void FirebaseClient::scanFleetForNewTanks() {
   }
 }
 
-void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry) {
+void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, const TelemetryPacket& telemetry, AlertManager* alertMgr) {
   maintainWifi(currentMillis);
 
   if (!isWifiConnected()) {
@@ -501,7 +531,7 @@ void FirebaseClient::update(uint32_t currentMillis, PumpController& pumpCtrl, co
   // Poll for commands across all registered fleet tanks
   if (currentMillis - _lastCommandPollMs >= COMMAND_POLL_INTERVAL_MS) {
     _lastCommandPollMs = currentMillis;
-    checkAndProcessCommands(pumpCtrl);
+    checkAndProcessCommands(pumpCtrl, alertMgr);
   }
 
   // Publish telemetry for all registered fleet tanks
