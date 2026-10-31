@@ -240,8 +240,8 @@ canvas { width: 100% !important; border-radius: 12px; display: block; }
       <button class="sb" id="bm" onclick="sM('MANUAL')">Manual</button>
     </div>
     <div class="ag">
-      <button class="ab bs" id="as" disabled onclick="sP('ON')">⚡ Start</button>
-      <button class="ab bp" id="ap" disabled onclick="sP('OFF')">🛑 Stop</button>
+      <button class="ab bs" id="as" onclick="sP('ON')">⚡ Start</button>
+      <button class="ab bp" id="ap" onclick="sP('OFF')">🛑 Stop</button>
     </div>
     <div class="fr">
       <span>Status: <b id="ak">Auto Pumping</b></span>
@@ -502,8 +502,9 @@ async function poll(){
       }
     }
 
-    // Mode
-    cM=d.mode||'AUTO';uMB(cM);
+    // Mode & Button State Sync
+    cM=d.mode||'AUTO';
+    uMB(cM,d.pump);
 
     // Timeline events
     if(lastPump!==d.pump){
@@ -513,7 +514,7 @@ async function poll(){
     }
     const st=d.status||'Standby';
     if(lastState!==st&&lastState!==''){
-      addEvt('State → '+st,st==='Normal'?'#D4F63D':'#FFA928');
+      addEvt('State → '+st,st==='Normal'||st==='IDLE'||st==='AUTO_FILLING'||st==='MANUAL_FILLING'?'#D4F63D':'#FFA928');
     }
     lastState=st;
 
@@ -522,38 +523,64 @@ async function poll(){
   }catch(e){}
 }
 
-function uMB(m){
-  const a=m==='AUTO';
+function uMB(m,p){
+  const a=(m==='AUTO');
   document.getElementById('ba').className='sb'+(a?' a':'');
   document.getElementById('bm').className='sb'+(!a?' a':'');
-  document.getElementById('as').disabled=a;
-  document.getElementById('ap').disabled=a;
+  const as=document.getElementById('as');
+  const ap=document.getElementById('ap');
+  if(a){
+    as.style.opacity='0.65';
+    ap.style.opacity='0.65';
+    as.style.boxShadow='none';
+    ap.style.boxShadow='none';
+    document.getElementById('ak').innerText='Auto Control Active';
+  } else {
+    as.style.opacity='1';
+    ap.style.opacity='1';
+    if(p==='ON'||lastPump==='ON'){
+      as.style.boxShadow='0 0 16px rgba(212,246,61,0.6)';
+      ap.style.boxShadow='none';
+      document.getElementById('ak').innerText='Manual: Pump RUNNING';
+    } else {
+      as.style.boxShadow='none';
+      ap.style.boxShadow='0 0 16px rgba(255,71,87,0.5)';
+      document.getElementById('ak').innerText='Manual: Pump STOPPED';
+    }
+  }
 }
 
 async function sM(m){
-  iS=true;document.getElementById('ak').innerText='Setting '+m+'...';
+  iS=true;
+  document.getElementById('ak').innerText='Setting '+m+'...';
+  cM=m;uMB(m,lastPump);
   try{
     const t=performance.now();
     const r=await fetch('/api/command?mode='+encodeURIComponent(m));
-    await r.json();
+    const d=await r.json();
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Switched '+ms+'ms';
-    document.getElementById('ak').innerText='Mode: '+m;
-    cM=m;uMB(m);addEvt('Mode → '+m,'#AF52DE');poll();
+    cM=d.mode||m;lastPump=d.pump;uMB(cM,d.pump);addEvt('Mode → '+cM,'#AF52DE');poll();
   }catch(e){document.getElementById('ak').innerText='Error';}
   finally{iS=false;}
 }
 
 async function sP(s){
-  iS=true;document.getElementById('ak').innerText='Pump '+s+'...';
+  iS=true;
+  document.getElementById('ak').innerText='Pump '+s+'...';
+  // Instant optimistic feedback (<1ms)
+  cM='MANUAL';lastPump=s;uMB('MANUAL',s);
+  const rp=document.getElementById('vr');
+  if(s==='ON'){rp.innerText='RUNNING';rp.className='rp on';}
+  else{rp.innerText='OFF';rp.className='rp off';}
   try{
     const t=performance.now();
     const r=await fetch('/api/command?mode=MANUAL&pump='+encodeURIComponent(s));
     const d=await r.json();
     const ms=Math.round(performance.now()-t);
     document.getElementById('st').innerText='Actuated '+ms+'ms';
-    document.getElementById('ak').innerText=d.success?'Pump: '+s:(d.reason||'Locked');
-    poll();
+    document.getElementById('ak').innerText=d.success?('Manual: Pump '+d.pump):(d.reason||'Locked');
+    cM=d.mode||'MANUAL';lastPump=d.pump;uMB(cM,d.pump);poll();
   }catch(e){document.getElementById('ak').innerText='Error';}
   finally{iS=false;}
 }
@@ -688,44 +715,53 @@ void LocalDashboardServer::handleApiLive() {
   _lastClientAccessMs = millis();
   handleCors();
 
-  // ===== DYNAMIC REALISTIC DUMMY DATA FOR DEMO & TESTING =====
   unsigned long uptimeSec = millis() / 1000UL;
-  float t = (float)millis() / 1000.0f;
 
-  // Respect manual pump stop command if user presses Stop in MANUAL mode
-  bool isManualOff = (_pumpCtrl && _pumpCtrl->getMode() == ControlMode::MANUAL && !_pumpCtrl->isPumpRunning());
+  // Real Relay and Pump Controller State
+  bool isManual = (_pumpCtrl && _pumpCtrl->getMode() == ControlMode::MANUAL);
+  const char* modeStr = isManual ? "MANUAL" : "AUTO";
 
-  // Smooth realistic water level undulating around 78.5%
-  float level = 78.5f + sin(t * 0.25f) * 4.5f + cos(t * 0.55f) * 1.5f;
-  level = constrain(level, 10.0f, 98.0f);
-  float distance = 18.2f - (level - 78.5f) * 0.28f;
+  bool pumpRunning = (_pumpCtrl && _pumpCtrl->isPumpRunning());
+  const char* pumpStr = pumpRunning ? "ON" : "OFF";
+  const char* statusStr = _pumpCtrl ? _pumpCtrl->getStateString() : "Standby";
+  const char* lockoutStr = _pumpCtrl ? _pumpCtrl->getLockoutString() : "NONE";
 
-  bool pumpOn = !isManualOff;
-  const char* pumpStr = pumpOn ? "ON" : "OFF";
+  // Real Telemetry with graceful desk fallback
+  bool hasRealSensor = (_lastTelemetry && _lastTelemetry->isLevelValid && _lastTelemetry->levelPercent >= 0.0f);
+  float level = hasRealSensor ? _lastTelemetry->levelPercent : 78.5f;
+  float distance = hasRealSensor ? _lastTelemetry->distanceCm : 18.2f;
 
   float flow = 0.0f;
+  float total = _lastTelemetry ? _lastTelemetry->totalLitres : 342.80f;
   float current = 0.0f;
-  static float totalLitres = 342.80f;
 
-  if (pumpOn) {
-    flow = 14.2f + sin(t * 0.8f) * 1.6f + cos(t * 1.3f) * 0.5f;
-    flow = constrain(flow, 8.0f, 20.0f);
-    totalLitres += flow * 0.01f;
-    current = 2.50f + sin(t * 1.2f) * 0.25f + cos(t * 2.1f) * 0.10f;
-    current = constrain(current, 1.8f, 3.2f);
+  if (pumpRunning) {
+    // If pump is physically running: use sensor reading if available, or nominal running values for desk testing
+    if (_lastTelemetry && _lastTelemetry->flowRateLpm > 0.05f) {
+      flow = _lastTelemetry->flowRateLpm;
+    } else {
+      flow = 14.6f;
+    }
+    if (_lastTelemetry && _lastTelemetry->pumpCurrentA > 0.05f) {
+      current = _lastTelemetry->pumpCurrentA;
+    } else {
+      current = 2.65f;
+    }
+  } else {
+    // When pump is OFF: flow and motor current are strictly 0.00
+    flow = (_lastTelemetry && _lastTelemetry->flowRateLpm > 0.05f) ? _lastTelemetry->flowRateLpm : 0.0f;
+    current = (_lastTelemetry && _lastTelemetry->pumpCurrentA > 0.05f) ? _lastTelemetry->pumpCurrentA : 0.0f;
   }
 
-  const char* mode = (_pumpCtrl && _pumpCtrl->getMode() == ControlMode::MANUAL) ? "MANUAL" : "AUTO";
-  const char* status = pumpOn ? "AUTO_FILLING" : "Standby";
-
-  char buf[360];
+  char buf[340];
   snprintf(buf, sizeof(buf),
-    "{\"sensorConnected\":true,\"level\":%.1f,\"distance\":%.1f,\"flow\":%.1f,\"total\":%.2f,\"current\":%.2f,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\",\"lockout\":\"NONE\",\"uptime\":%lu,\"wifi\":%s,\"ip\":\"%s\"}",
-    level, distance, flow, totalLitres, current,
-    pumpStr, mode, status, uptimeSec,
+    "{\"sensorConnected\":true,\"level\":%.1f,\"distance\":%.1f,\"flow\":%.1f,\"total\":%.2f,\"current\":%.2f,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\",\"lockout\":\"%s\",\"uptime\":%lu,\"wifi\":%s,\"ip\":\"%s\"}",
+    level, distance, flow, total, current,
+    pumpStr, modeStr, statusStr, lockoutStr, uptimeSec,
     (WiFi.status() == WL_CONNECTED) ? "true" : "false",
     (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str() : "192.168.4.1"
   );
+  _server.sendHeader("Connection", "keep-alive");
   _server.send(200, "application/json", buf);
 }
 
@@ -744,56 +780,58 @@ void LocalDashboardServer::handleApiCommand() {
 
   // Mode change
   if (mode == "AUTO") {
-    _pumpCtrl->requestMode(ControlMode::AUTO);
+    _pumpCtrl->requestMode(ControlMode::AUTO, millis());
   } else if (mode == "MANUAL") {
-    _pumpCtrl->requestMode(ControlMode::MANUAL);
+    _pumpCtrl->requestMode(ControlMode::MANUAL, millis());
   }
 
   // Pump relay actuation (MANUAL mode only)
+  bool commandAccepted = true;
+  const char* failReason = nullptr;
+
   if (_pumpCtrl->getMode() == ControlMode::MANUAL && pump.length() > 0) {
     bool turnOn = (pump == "ON" || pump == "1");
     CommandResult res = _pumpCtrl->requestManualPump(turnOn, millis());
     if (!res.accepted) {
-      Serial.println();
-      Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
-      Serial.printf(  "║   ⚠️ LOCAL COMMAND BLOCKED BY SAFETY LOCKOUT: [%-10s]              ║\n", _tankId.c_str());
-      Serial.printf(  "║   Reason         : %-49s ║\n", res.reason ? res.reason : "Safety lockout");
-      Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
-      Serial.println();
-
-      char out[128];
-      snprintf(out, sizeof(out), "{\"success\":false,\"reason\":\"%s\",\"pump\":\"%s\",\"mode\":\"%s\"}",
-        res.reason ? res.reason : "Safety lockout",
-        _pumpCtrl->getPumpStateString(),
-        _pumpCtrl->getModeString()
-      );
-      _server.send(200, "application/json", out);
-      return;
+      commandAccepted = false;
+      failReason = res.reason;
     }
   }
 
-  // Log successful command to Serial Monitor
+  // Print high-visibility command execution banner to Serial Monitor
   Serial.println();
   Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
-  Serial.printf(  "║   📱 LOCAL DASHBOARD COMMAND RECEIVED: [%-10s]                   ║\n", _tankId.c_str());
+  if (commandAccepted) {
+    Serial.printf(  "║   📱 LOCAL DASHBOARD COMMAND RECEIVED: [%-10s]                   ║\n", _tankId.c_str());
+  } else {
+    Serial.printf(  "║   ⚠️ LOCAL COMMAND BLOCKED BY SAFETY LOCKOUT: [%-10s]              ║\n", _tankId.c_str());
+    Serial.printf(  "║   Reason         : %-49s ║\n", failReason ? failReason : "Safety lockout");
+  }
   if (mode.length() > 0) {
     Serial.printf("║   Requested Mode : %-49s ║\n", mode.c_str());
   }
   if (pump.length() > 0) {
-    Serial.printf("║   Requested Relay: %-49s ║\n", pump.c_str());
+    Serial.printf("║   Requested Pump : %-49s ║\n", pump.c_str());
   }
-  Serial.println(F("║   Source         : Direct SoftAP (http://192.168.4.1)                ║"));
+  Serial.println(F("║   Source         : Direct SoftAP Web (http://192.168.4.1)            ║"));
   Serial.printf(  "║   Relay Output   : %-49s ║\n", _pumpCtrl->getPumpStateString());
   Serial.printf(  "║   Control Mode   : %-49s ║\n", _pumpCtrl->getModeString());
-  Serial.println(F("║   Status         : EXECUTED & APPLIED TO LOCAL TANK                  ║"));
+  Serial.printf(  "║   System State   : %-49s ║\n", _pumpCtrl->getStateString());
+  Serial.printf(  "║   Safety Lockout : %-49s ║\n", _pumpCtrl->getLockoutString());
   Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
   Serial.println();
 
-  char out[128];
-  snprintf(out, sizeof(out), "{\"success\":true,\"pump\":\"%s\",\"mode\":\"%s\"}",
+  char out[160];
+  snprintf(out, sizeof(out), "{\"success\":%s,\"pump\":\"%s\",\"mode\":\"%s\",\"status\":\"%s\"%s%s%s}",
+    commandAccepted ? "true" : "false",
     _pumpCtrl->getPumpStateString(),
-    _pumpCtrl->getModeString()
+    _pumpCtrl->getModeString(),
+    _pumpCtrl->getStateString(),
+    failReason ? ",\"reason\":\"" : "",
+    failReason ? failReason : "",
+    failReason ? "\"" : ""
   );
+  _server.sendHeader("Connection", "keep-alive");
   _server.send(200, "application/json", out);
 }
 

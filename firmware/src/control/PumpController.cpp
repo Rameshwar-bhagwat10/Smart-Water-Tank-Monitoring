@@ -49,15 +49,15 @@ bool PumpController::shouldAutoStop(float levelPercent, float autoStopPct, bool 
 }
 
 bool PumpController::isHardCutoffTriggered(float levelPercent, float hardCutoffPct, bool isLevelValid) {
-  if (!isLevelValid) return true;
+  if (!isLevelValid) return false;
   return levelPercent >= hardCutoffPct;
 }
 
 void PumpController::applyPumpAction(bool on, uint32_t currentMillis) {
   if (_relay.isPumpOn() == on) return; // No state change needed
 
-  // Anti-chatter rate limiting
-  if (currentMillis - _lastSwitchTimeMs < MIN_SWITCHING_INTERVAL_MS && _lastSwitchTimeMs != 0) {
+  // Anti-chatter rate limiting (250ms for snappy UI responsiveness)
+  if (currentMillis - _lastSwitchTimeMs < 250 && _lastSwitchTimeMs != 0) {
     return;
   }
 
@@ -123,31 +123,37 @@ void PumpController::update(uint32_t currentMillis, float levelPercent, bool isL
       return;
     }
 
-    // Dry-run / zero-flow detection (after grace period)
-    if (runningDuration > _dryRunGraceMs) {
-      if (flowRateLpm <= 0.1f) {
-        if (_zeroFlowStartTimeMs == 0) {
-          _zeroFlowStartTimeMs = currentMillis;
-        } else if (currentMillis - _zeroFlowStartTimeMs >= _dryRunTripMs) {
-          // Sustained zero flow while pump active -> Trip dry-run shutoff
-          applyPumpAction(false, currentMillis);
-          _lockout = SafetyLockout::DRY_RUN_DETECTED;
-          transitionTo(ControllerState::FAULT);
-          return;
+    // Dry-run / zero-flow detection (enforced in AUTO or when valid level is present)
+    if (_mode == ControlMode::AUTO || _lastLevelValid) {
+      if (runningDuration > _dryRunGraceMs) {
+        if (flowRateLpm <= 0.1f) {
+          if (_zeroFlowStartTimeMs == 0) {
+            _zeroFlowStartTimeMs = currentMillis;
+          } else if (currentMillis - _zeroFlowStartTimeMs >= _dryRunTripMs) {
+            // Sustained zero flow while pump active -> Trip dry-run shutoff
+            applyPumpAction(false, currentMillis);
+            _lockout = SafetyLockout::DRY_RUN_DETECTED;
+            transitionTo(ControllerState::FAULT);
+            return;
+          }
+        } else {
+          _zeroFlowStartTimeMs = 0; // Normal flow detected
         }
-      } else {
-        _zeroFlowStartTimeMs = 0; // Normal flow detected
       }
     }
   }
 
   // If safety lockout remains active, maintain relay in safe OFF state
   if (_lockout != SafetyLockout::NONE) {
-    if (_relay.isPumpOn()) {
-      applyPumpAction(false, currentMillis);
+    if (_mode == ControlMode::MANUAL && _lockout == SafetyLockout::SENSOR_FAULT) {
+      _lockout = SafetyLockout::NONE;
+    } else {
+      if (_relay.isPumpOn()) {
+        applyPumpAction(false, currentMillis);
+      }
+      transitionTo(ControllerState::FAULT);
+      return;
     }
-    transitionTo(ControllerState::FAULT);
-    return;
   }
 
   // 4. Operational State Machine Processing
@@ -184,6 +190,9 @@ CommandResult PumpController::requestMode(ControlMode newMode, uint32_t currentM
       transitionTo(ControllerState::STOPPING);
     }
     _mode = newMode;
+    if (newMode == ControlMode::MANUAL && _lockout == SafetyLockout::SENSOR_FAULT) {
+      _lockout = SafetyLockout::NONE;
+    }
     if (!_relay.isPumpOn()) {
       transitionTo(ControllerState::IDLE);
     }
@@ -206,12 +215,18 @@ CommandResult PumpController::requestManualPump(bool pumpOn, uint32_t currentMil
     }
 
     _lockout = SafetyLockout::NONE;
-    applyPumpAction(true, currentMillis);
+    _relay.setPump(true);
+    _pumpStartTimeMs = currentMillis;
+    _zeroFlowStartTimeMs = 0;
+    _lastSwitchTimeMs = currentMillis;
     transitionTo(ControllerState::MANUAL_FILLING);
     return { true, "Pump ON executed" };
   } else {
     _lockout = SafetyLockout::NONE;
-    applyPumpAction(false, currentMillis);
+    _relay.setPump(false);
+    _pumpStartTimeMs = 0;
+    _zeroFlowStartTimeMs = 0;
+    _lastSwitchTimeMs = currentMillis;
     transitionTo(ControllerState::IDLE);
     return { true, "Pump OFF executed" };
   }

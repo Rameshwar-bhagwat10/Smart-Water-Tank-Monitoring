@@ -246,8 +246,8 @@ void loop() {
     firebaseClient.update(now, pumpController, pkt);
   }
 
-  // 7. Periodic Telemetry Stream (~3s)
-  if (now - lastSerialLogMs >= 3000) {
+  // 7. Periodic Telemetry Stream (~2s)
+  if (now - lastSerialLogMs >= 2000) {
     lastSerialLogMs = now;
     if (wifiConnected && !localServer.hasRecentClient()) {
       // 1. Cloud Multi-Tank Fleet Mode (When Wi-Fi is connected and no active local dashboard session)
@@ -345,6 +345,53 @@ void loop() {
       SmartTank::ConfigManager::resetToDefaults();
       delay(500);
       ESP.restart();
+    } else if (cmd == "PUMP ON" || cmd == "PUMP_ON" || cmd == "START" || cmd == "ON") {
+      pumpController.requestMode(SmartTank::ControlMode::MANUAL, now);
+      SmartTank::CommandResult res = pumpController.requestManualPump(true, now);
+      Serial.println();
+      Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
+      Serial.printf(  "║   ⚡ SERIAL COMMAND: PUMP START REQUESTED                            ║\n");
+      Serial.printf(  "║   Result         : %-49s ║\n", res.accepted ? "ACCEPTED & EXECUTED" : (res.reason ? res.reason : "BLOCKED"));
+      Serial.printf(  "║   Physical Relay : %-49s ║\n", pumpController.getPumpStateString());
+      Serial.printf(  "║   Control Mode   : %-49s ║\n", pumpController.getModeString());
+      Serial.printf(  "║   State Machine  : %-49s ║\n", pumpController.getStateString());
+      Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
+      alertMgr.triggerChirp(80);
+      lastSerialLogMs = 0; // Force immediate telemetry print
+    } else if (cmd == "PUMP OFF" || cmd == "PUMP_OFF" || cmd == "STOP" || cmd == "OFF") {
+      pumpController.requestMode(SmartTank::ControlMode::MANUAL, now);
+      SmartTank::CommandResult res = pumpController.requestManualPump(false, now);
+      Serial.println();
+      Serial.println(F("╔══════════════════════════════════════════════════════════════════════╗"));
+      Serial.printf(  "║   🛑 SERIAL COMMAND: PUMP STOP REQUESTED                             ║\n");
+      Serial.printf(  "║   Result         : %-49s ║\n", res.accepted ? "ACCEPTED & EXECUTED" : (res.reason ? res.reason : "BLOCKED"));
+      Serial.printf(  "║   Physical Relay : %-49s ║\n", pumpController.getPumpStateString());
+      Serial.printf(  "║   Control Mode   : %-49s ║\n", pumpController.getModeString());
+      Serial.printf(  "║   State Machine  : %-49s ║\n", pumpController.getStateString());
+      Serial.println(F("╚══════════════════════════════════════════════════════════════════════╝"));
+      alertMgr.triggerChirp(80);
+      lastSerialLogMs = 0; // Force immediate telemetry print
+    } else if (cmd == "AUTO") {
+      pumpController.requestMode(SmartTank::ControlMode::AUTO, now);
+      Serial.println(F("\n[Serial Command] >>> Control Mode switched to AUTO <<<\n"));
+      alertMgr.triggerChirp(80);
+      lastSerialLogMs = 0;
+    } else if (cmd == "MANUAL") {
+      pumpController.requestMode(SmartTank::ControlMode::MANUAL, now);
+      Serial.println(F("\n[Serial Command] >>> Control Mode switched to MANUAL <<<\n"));
+      alertMgr.triggerChirp(80);
+      lastSerialLogMs = 0;
+    } else if (cmd == "HELP" || cmd == "?") {
+      Serial.println(F("\n==================== SERIAL CONSOLE HELP ===================="));
+      Serial.println(F("  PUMP ON   / START  - Switch to MANUAL and actuate relay ON"));
+      Serial.println(F("  PUMP OFF  / STOP   - Switch to MANUAL and actuate relay OFF"));
+      Serial.println(F("  AUTO               - Switch to Autonomous interlock mode"));
+      Serial.println(F("  MANUAL             - Switch to Manual operator control"));
+      Serial.println(F("  LOCAL              - Display instant local sensor monitor"));
+      Serial.println(F("  STATUS / FLEET     - Display Wi-Fi connection and tank list"));
+      Serial.println(F("  SET_TANK <id>      - Switch active tank target (e.g. SET_TANK tank-01)"));
+      Serial.println(F("  RESET_CONFIG       - Erase stored EEPROM and reset to defaults"));
+      Serial.println(F("=============================================================\n"));
     } else if (cmd == "LOCAL") {
       float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 78.5f;
       float dispDistance = (distanceCm >= 0.0f) ? distanceCm : 18.2f;
