@@ -6,7 +6,9 @@ export const revalidate = 1;
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tankId = searchParams.get('tankId') || 'tank-01';
-  const databaseURL = 'https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com';
+  const databaseURL =
+    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
+    'https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com';
 
   try {
     const res = await fetch(`${databaseURL}/tanks/${tankId}/live.json`, {

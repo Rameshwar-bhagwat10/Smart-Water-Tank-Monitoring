@@ -9,7 +9,9 @@ export const revalidate = 1;
  * Pre-renders initial telemetry snapshot so water level and metrics are instantly visible on page load (0ms FCP)
  */
 async function getInitialTankTelemetry(tankId = 'tank-01'): Promise<TelemetryData | null> {
-  const databaseURL = 'https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com';
+  const databaseURL =
+    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
+    'https://smart-water-tank-monitor-c38c0-default-rtdb.firebaseio.com';
   const url = `${databaseURL}/tanks/${tankId}/live.json`;
 
   try {
