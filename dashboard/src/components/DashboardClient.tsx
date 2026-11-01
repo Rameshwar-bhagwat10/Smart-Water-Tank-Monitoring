@@ -13,9 +13,9 @@ import FooterSpecs from './FooterSpecs';
 import LoginView from './LoginView';
 import { playWebBuzzer } from './AudioBuzzer';
 
-import { onAuthChange, logout } from '../firebase/auth.js';
-import { listenToTelemetry, sendCommand, ensureUserAndTankData } from '../firebase/database.js';
-import { isConfigured, configError } from '../firebase/config.js';
+import { onAuthChange, logout } from '../firebase/auth';
+import { listenToTelemetry, sendCommand, ensureUserAndTankData } from '../firebase/database';
+import { isConfigured, configError } from '../firebase/config';
 import type { User } from 'firebase/auth';
 import type {
   TelemetryData,

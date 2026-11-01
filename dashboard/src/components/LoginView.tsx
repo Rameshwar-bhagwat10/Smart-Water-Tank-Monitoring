@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, FormEvent } from 'react';
-import { loginWithEmail } from '../firebase/auth.js';
+import { loginWithEmail } from '../firebase/auth';
 import type { User } from 'firebase/auth';
 
 interface LoginViewProps {
