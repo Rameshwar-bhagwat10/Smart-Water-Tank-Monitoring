@@ -29,7 +29,7 @@ void FirebaseClient::initSecureClient() {
   if (!_secureClientConfigured) {
     _secureClient.setInsecure();
     _secureClient.setBufferSizes(1024, 512); // Saves 31KB of RAM and dramatically speeds up TLS handshakes
-    _secureClient.setTimeout(800);
+    _secureClient.setTimeout(400);
     _secureClientConfigured = true;
   }
 }

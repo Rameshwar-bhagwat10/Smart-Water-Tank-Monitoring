@@ -10,7 +10,7 @@
     "tanks": {
       "$tankId": {
         "live": {
-          ".read": "auth != null",
+          ".read": true,
           ".write": true
         },
         "commands": {

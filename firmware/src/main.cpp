@@ -296,8 +296,8 @@ void loop() {
   // Runs continuously so the cloud dashboard receives instant <100ms command actuation
   firebaseClient.update(now, pumpController, pkt, &alertMgr);
 
-  // 7. Periodic Sensor Diagnostics Stream (~2s)
-  if (now - lastSerialLogMs >= 2000) {
+  // 7. Periodic Sensor Diagnostics Stream (~1s)
+  if (now - lastSerialLogMs >= 1000) {
     lastSerialLogMs = now;
 
     float dispLevel = (levelPercent >= 0.0f) ? levelPercent : 0.0f;
@@ -313,7 +313,7 @@ void loop() {
       dispLevel, dispDistance, sonicStatus);
     Serial.printf(  "│  [2] Flow Sensor : %5.1f L/min (Peak: %4.1f | Pulses: %-5lu | Vol: %5.2f L) │\n",
       flowRateLpm, recentPeakFlowLpm, (unsigned long)flowPulses, totalLitres);
-    recentPeakFlowLpm = flowRateLpm; // Reset peak window for next 2-second cycle
+    recentPeakFlowLpm = flowRateLpm; // Reset peak window for next 1-second cycle
     Serial.printf(  "│  [3] Water Probe : %-14s (D7 Pin: %-4s | Active-LOW: %-3s)     │\n",
       waterProbe.getStatusString(),
       waterProbe.getRawPinState() == LOW ? "LOW" : "HIGH",
@@ -327,6 +327,7 @@ void loop() {
     Serial.printf(  "│  [6] State/Lock  : %-15s (Lockout: %-18s) │\n",
       pumpController.getStateString(), pumpController.getLockoutString());
     Serial.println(F("└───────────────────────────────────────────────────────────────────────┘"));
+    Serial.flush();
   }
 
   // 8. Check Hardware Flash Button for Runtime Reset (Hold for 5s)

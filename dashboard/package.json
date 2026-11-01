@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "preview": "next start",
     "test:rules": "node ../tests/rules-evaluation.test.js",
     "test:regression": "node ../tests/phase-4a-regression.test.js",
     "test:pump": "node ../tests/pump-controller.test.js",
@@ -14,9 +15,16 @@
     "test": "npm run test:rules && npm run test:regression && npm run test:pump && npm run test:sensors"
   },
   "dependencies": {
-    "firebase": "^13.0.0"
+    "firebase": "^13.0.0",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
     "vite": "^6.2.0"
   }
 }
