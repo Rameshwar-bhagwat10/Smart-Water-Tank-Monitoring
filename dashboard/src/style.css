@@ -53,6 +53,29 @@
   /* Shadows */
   --shadow-card: 0 16px 36px -10px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-glow: 0 0 24px rgba(212, 246, 61, 0.28);
+
+  /* iOS 18 Control Center Motion & Glassmorphism Design Tokens */
+  --ios-glass-bg: rgba(19, 24, 36, 0.72);
+  --ios-glass-bg-hover: rgba(25, 32, 48, 0.82);
+  --ios-glass-bg-active: rgba(14, 18, 28, 0.90);
+  --ios-glass-blur: blur(28px) saturate(190%) contrast(105%);
+  --ios-glass-border: rgba(255, 255, 255, 0.12);
+  --ios-glass-border-hover: rgba(255, 255, 255, 0.22);
+  --ios-specular-shadow: 
+    0 20px 48px -12px rgba(0, 0, 0, 0.65),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --ios-specular-shadow-hover: 
+    0 24px 54px -10px rgba(0, 0, 0, 0.72),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  --ios-specular-shadow-active: 
+    0 8px 24px -6px rgba(0, 0, 0, 0.80),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --ios-spring-release: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ios-press-down: cubic-bezier(0.4, 0.0, 0.2, 1.0);
+  --ios-decelerate: cubic-bezier(0.25, 1.0, 0.5, 1.0);
 }
 
 * {
@@ -110,17 +133,19 @@ body {
 }
 
 .login-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 32px;
+  background: var(--ios-glass-bg);
+  backdrop-filter: var(--ios-glass-blur);
+  -webkit-backdrop-filter: var(--ios-glass-blur);
+  border: 1px solid var(--ios-glass-border);
+  border-radius: 36px;
   padding: 38px 28px 32px;
   max-width: 390px;
   width: 100%;
-  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: var(--ios-specular-shadow);
   text-align: center;
   position: relative;
   overflow: hidden;
-  animation: cardEntrance 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: cardEntrance 0.52s var(--ios-decelerate);
 }
 
 /* Subtle Top Geometric Arch */
@@ -303,7 +328,7 @@ body {
   40%, 60% { transform: translate3d(3px, 0, 0); }
 }
 
-/* Electric Lime Monex-Style Pill CTA */
+/* Electric Lime Monex-Style Pill CTA with iOS Spring Tap */
 .login-btn {
   width: 100%;
   height: 52px;
@@ -316,7 +341,8 @@ body {
   border-radius: var(--r-pill);
   cursor: pointer;
   box-shadow: 0 4px 24px rgba(212, 246, 61, 0.35);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateZ(0);
+  transition: transform 0.38s var(--ios-spring-release), background 0.2s, box-shadow 0.2s;
   margin-top: 6px;
   display: flex;
   align-items: center;
@@ -327,12 +353,13 @@ body {
 .login-btn:hover {
   background: var(--accent-hover);
   box-shadow: 0 6px 28px rgba(212, 246, 61, 0.45);
-  transform: translateY(-1px);
+  transform: scale(1.02) translateY(-1px);
 }
 
 .login-btn:active {
-  transform: scale(0.985);
+  transform: scale(0.95);
   filter: brightness(0.94);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
 .login-btn:disabled {
@@ -379,12 +406,28 @@ body {
   z-index: 1;
 }
 
-/* Header */
+/* Header — iOS 18 Control Center Floating Navigation Island */
 .hd {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 4px 4px;
+  padding: 8px 14px 8px 10px;
+  background: rgba(18, 22, 34, 0.65);
+  backdrop-filter: var(--ios-glass-blur);
+  -webkit-backdrop-filter: var(--ios-glass-blur);
+  border: 1px solid var(--ios-glass-border);
+  border-radius: var(--r-pill);
+  box-shadow: 
+    0 12px 32px -8px rgba(0, 0, 0, 0.55),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  margin-bottom: 2px;
+  transform: translateZ(0);
+  transition: transform 0.38s var(--ios-spring-release), border-color 0.24s var(--ios-decelerate);
+}
+
+.hd:hover {
+  border-color: var(--ios-glass-border-hover);
 }
 
 .hd-brand {
@@ -397,19 +440,19 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 12px;
-  background: var(--card);
-  border: 1px solid rgba(212, 246, 61, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(212, 246, 61, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--accent);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .hd-t {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.5px;
   color: #FFFFFF;
 }
 
@@ -425,12 +468,17 @@ body {
   gap: 6px;
   font-size: 11px;
   font-weight: 700;
-  padding: 5px 12px;
+  padding: 6px 12px;
   border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid rgba(212, 246, 61, 0.25);
-  box-shadow: 0 0 12px rgba(212, 246, 61, 0.15);
+  box-shadow: 0 0 14px rgba(212, 246, 61, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: transform 0.35s var(--ios-spring-release);
+}
+
+.hd-b:hover {
+  transform: scale(1.03);
 }
 
 .dp {
@@ -450,42 +498,63 @@ body {
 .logout-btn {
   font-size: 11px;
   font-weight: 700;
-  padding: 5px 12px;
+  padding: 6px 12px;
   border-radius: var(--r-pill);
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--red);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 71, 87, 0.12);
+  color: #FF6B7A;
   cursor: pointer;
-  transition: all 0.18s;
+  transform: translateZ(0);
+  transition: transform 0.38s var(--ios-spring-release), background 0.2s, border-color 0.2s;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .logout-btn:hover {
-  background: var(--red-soft);
-  border-color: rgba(255, 71, 87, 0.35);
-  transform: translateY(-1px);
+  background: rgba(255, 71, 87, 0.22);
+  border-color: rgba(255, 71, 87, 0.45);
+  transform: scale(1.04) translateY(-1px);
 }
 
 .logout-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.94);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
-/* Base Card */
+/* Base iOS 18 Control Center Glassmorphism Card */
 .cd {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  padding: 18px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: var(--ios-glass-bg);
+  backdrop-filter: var(--ios-glass-blur);
+  -webkit-backdrop-filter: var(--ios-glass-blur);
+  border-radius: var(--r-xl);
+  padding: 20px;
+  border: 1px solid var(--ios-glass-border);
+  box-shadow: var(--ios-specular-shadow);
   position: relative;
   overflow: hidden;
-  transition: border-color 0.2s;
+  user-select: none;
+  transform: translateZ(0);
+  transition: 
+    transform 0.38s var(--ios-spring-release),
+    background 0.24s var(--ios-decelerate),
+    border-color 0.24s var(--ios-decelerate),
+    box-shadow 0.24s var(--ios-decelerate);
 }
 
 .cd:hover {
-  border-color: rgba(255, 255, 255, 0.13);
+  background: var(--ios-glass-bg-hover);
+  border-color: var(--ios-glass-border-hover);
+  box-shadow: var(--ios-specular-shadow-hover);
+  transform: scale(1.012) translateY(-1px);
+}
+
+.cd:active,
+.cd.ios-pressed {
+  transform: scale(0.968);
+  background: var(--ios-glass-bg-active);
+  box-shadow: var(--ios-specular-shadow-active);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
 /* ============================================================================
@@ -683,20 +752,39 @@ canvas {
 }
 
 .mb {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  padding: 14px 14px 12px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: var(--ios-glass-bg);
+  backdrop-filter: var(--ios-glass-blur);
+  -webkit-backdrop-filter: var(--ios-glass-blur);
+  border-radius: var(--r-xl);
+  padding: 16px 14px 14px;
+  border: 1px solid var(--ios-glass-border);
+  box-shadow: var(--ios-specular-shadow);
   display: flex;
   flex-direction: column;
   gap: 5px;
-  transition: all 0.2s;
+  user-select: none;
+  cursor: pointer;
+  transform: translateZ(0);
+  transition: 
+    transform 0.38s var(--ios-spring-release),
+    background 0.24s var(--ios-decelerate),
+    border-color 0.24s var(--ios-decelerate),
+    box-shadow 0.24s var(--ios-decelerate);
 }
 
 .mb:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-  transform: translateY(-1px);
+  background: var(--ios-glass-bg-hover);
+  border-color: var(--ios-glass-border-hover);
+  box-shadow: var(--ios-specular-shadow-hover);
+  transform: scale(1.025) translateY(-2px);
+}
+
+.mb:active,
+.mb.ios-pressed {
+  transform: scale(0.95);
+  background: var(--ios-glass-bg-active);
+  box-shadow: var(--ios-specular-shadow-active);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
 .mt {
@@ -865,35 +953,49 @@ canvas {
   margin-bottom: 10px;
 }
 
-/* Kalo Segmented Pill Control */
+/* Kalo Segmented Pill Control — iOS 18 Control Center Switcher */
 .seg {
   display: flex;
-  background: var(--card-inner);
+  background: rgba(14, 18, 28, 0.75);
+  backdrop-filter: var(--ios-glass-blur);
+  -webkit-backdrop-filter: var(--ios-glass-blur);
   border-radius: var(--r-pill);
   padding: 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ios-glass-border);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .sb {
   flex: 1;
   border: none;
   background: transparent;
-  padding: 9px 12px;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-sec);
   border-radius: var(--r-pill);
   cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  transform: translateZ(0);
+  transition: transform 0.35s var(--ios-spring-release), background 0.22s var(--ios-decelerate), color 0.2s, box-shadow 0.2s;
+}
+
+.sb:hover:not(.a) {
+  color: #FFFFFF;
+}
+
+.sb:active {
+  transform: scale(0.94);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
 .sb.a {
   background: var(--accent);
   color: var(--accent-dark);
-  box-shadow: 0 2px 14px rgba(212, 246, 61, 0.35);
+  box-shadow: 0 3px 16px rgba(212, 246, 61, 0.4), inset 0 1px 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-/* Monex Action Buttons (Start / Stop) */
+/* Monex Action Buttons with iOS 18 Spring Tap Physics */
 .ag {
   display: flex;
   gap: 10px;
@@ -902,26 +1004,32 @@ canvas {
 
 .ab {
   flex: 1;
-  height: 48px;
+  height: 50px;
   font-size: 14.5px;
   font-weight: 800;
   letter-spacing: -0.2px;
   border: none;
   border-radius: var(--r-pill);
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  user-select: none;
+  transform: translateZ(0);
+  transition: 
+    transform 0.38s var(--ios-spring-release),
+    box-shadow 0.24s var(--ios-decelerate),
+    filter 0.2s;
 }
 
 .ab:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: scale(1.025) translateY(-1px);
 }
 
-.ab:active {
-  transform: scale(0.97);
+.ab:active:not(:disabled) {
+  transform: scale(0.95);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
 .ab:disabled {
@@ -935,24 +1043,24 @@ canvas {
 .bs {
   background: var(--accent);
   color: var(--accent-dark);
-  box-shadow: 0 4px 20px rgba(212, 246, 61, 0.35);
+  box-shadow: 0 4px 20px rgba(212, 246, 61, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.4);
 }
 
 .bs:hover:not(:disabled) {
   background: var(--accent-hover);
-  box-shadow: 0 6px 26px rgba(212, 246, 61, 0.45);
+  box-shadow: 0 6px 28px rgba(212, 246, 61, 0.5);
 }
 
 /* Coral Red Stop Button */
 .bp {
   background: var(--red);
   color: #FFFFFF;
-  box-shadow: 0 4px 20px rgba(255, 71, 87, 0.35);
+  box-shadow: 0 4px 20px rgba(255, 71, 87, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.25);
 }
 
 .bp:hover:not(:disabled) {
   background: #FF5A69;
-  box-shadow: 0 6px 26px rgba(255, 71, 87, 0.45);
+  box-shadow: 0 6px 28px rgba(255, 71, 87, 0.5);
 }
 
 .fr {
@@ -1031,19 +1139,34 @@ canvas {
    FOOTER INFO LIST (Monex Spec Rows)
    ============================================================================ */
 
+/* Footer Info List with iOS 18 Glassmorphism */
 .fl {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-card);
+  background: var(--ios-glass-bg);
+  backdrop-filter: var(--ios-glass-blur);
+  -webkit-backdrop-filter: var(--ios-glass-blur);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--ios-glass-border);
+  box-shadow: var(--ios-specular-shadow);
   overflow: hidden;
+  transform: translateZ(0);
+  transition: transform 0.38s var(--ios-spring-release), border-color 0.24s var(--ios-decelerate);
+}
+
+.fl:hover {
+  border-color: var(--ios-glass-border-hover);
+  transform: scale(1.01) translateY(-1px);
+}
+
+.fl:active {
+  transform: scale(0.975);
+  transition: transform 0.12s var(--ios-press-down);
 }
 
 .fl-r {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 11px 16px;
+  padding: 12px 18px;
   font-size: 12px;
   color: var(--text-sec);
   border-bottom: 1px solid var(--separator);
@@ -1058,4 +1181,53 @@ canvas {
   font-weight: 600;
   font-family: "JetBrains Mono", monospace;
   font-size: 11.5px;
+}
+
+/* ============================================================================
+   iOS 18 STAGGERED SPRING CASCADE ENTRANCE & REDUCED MOTION
+   ============================================================================ */
+
+@keyframes iosCardEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ct [data-motion-item] {
+  animation: iosCardEntrance 0.52s var(--ios-decelerate) backwards;
+}
+
+.ct > [data-motion-item]:nth-child(1) { animation-delay: 0.000s; }
+.ct > [data-motion-item]:nth-child(2) { animation-delay: 0.045s; }
+.ct > [data-motion-item]:nth-child(3) { animation-delay: 0.090s; }
+.ct > [data-motion-item]:nth-child(4) { animation-delay: 0.135s; }
+.ct > [data-motion-item]:nth-child(5) { animation-delay: 0.180s; }
+.ct > [data-motion-item]:nth-child(6) { animation-delay: 0.225s; }
+.ct > [data-motion-item]:nth-child(7) { animation-delay: 0.270s; }
+.ct > [data-motion-item]:nth-child(8) { animation-delay: 0.315s; }
+.ct > [data-motion-item]:nth-child(9) { animation-delay: 0.360s; }
+.ct > [data-motion-item]:nth-child(10) { animation-delay: 0.405s; }
+
+/* Reduced Motion Preference Support */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .cd:hover, .cd:active,
+  .mb:hover, .mb:active,
+  .ab:hover, .ab:active,
+  .sb:active, .fl:hover, .fl:active,
+  .logout-btn:hover, .logout-btn:active,
+  .login-btn:hover, .login-btn:active,
+  .hd:hover {
+    transform: none !important;
+  }
 }

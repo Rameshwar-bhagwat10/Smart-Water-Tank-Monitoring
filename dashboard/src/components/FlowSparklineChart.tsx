@@ -88,7 +88,7 @@ export default function FlowSparklineChart({
   }, [history]);
 
   return (
-    <div className="cd ch-wrap">
+    <div className="cd ch-wrap" data-motion-item>
       <div className="ch-hd">
         <span className="ch-t">Flow Rate Sparkline</span>
         <span className="ch-v" id="ch-fv">

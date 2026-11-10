@@ -496,7 +496,7 @@ export default function DashboardClient({
   const currentStatus = telemetry.controllerStatus || 'Standby';
 
   return (
-    <div className="ct">
+    <div className="ct" data-motion="ios18-control-center-glass">
       {/* 1. Header with Brand & Cloud Live Badge */}
       <Header onLogout={handleLogout} isOnline={true} />
 

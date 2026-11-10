@@ -59,3 +59,8 @@ Desktop.ini
 *.hex
 *.bin
 *.elf
+
+# Motion Transplant Captures
+motion/*/frames/
+motion/*/curves/
+

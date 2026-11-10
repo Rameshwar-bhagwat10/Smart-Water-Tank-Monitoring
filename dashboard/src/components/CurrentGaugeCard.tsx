@@ -96,7 +96,7 @@ export default function CurrentGaugeCard({
   }
 
   return (
-    <div className="cd">
+    <div className="cd" data-motion-item>
       <div className="ch-hd">
         <span className="ch-t">Pump Current Ring</span>
       </div>

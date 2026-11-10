@@ -46,7 +46,7 @@ export default function ControlModeCard({
   }
 
   return (
-    <div className="cd">
+    <div className="cd" data-motion-item>
       <div className="st">Control Mode</div>
       <div className="seg">
         <button

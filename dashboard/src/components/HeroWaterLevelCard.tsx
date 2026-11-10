@@ -15,7 +15,7 @@ export default function HeroWaterLevelCard({ levelPercent, distanceCm }: HeroWat
     typeof distanceCm === 'number' && distanceCm >= 0 ? `${distanceCm.toFixed(1)} cm` : '--';
 
   return (
-    <div className="cd hero">
+    <div className="cd hero" data-motion-item>
       <div className="tk">
         <div
           className="tf"

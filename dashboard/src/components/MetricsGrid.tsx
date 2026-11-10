@@ -25,9 +25,9 @@ export default function MetricsGrid({
   const isPumpRunning = pumpState === 'ON';
 
   return (
-    <div className="grid">
+    <div className="grid" data-motion-item>
       {/* 1. Flow Rate */}
-      <div className="mb">
+      <div className="mb" data-motion-item>
         <div className="mt">
           <span className="ml">Flow Rate</span>
           <div className="mi ib">💧</div>
@@ -41,7 +41,7 @@ export default function MetricsGrid({
       </div>
 
       {/* 2. Pump Current */}
-      <div className="mb">
+      <div className="mb" data-motion-item>
         <div className="mt">
           <span className="ml">Pump Current</span>
           <div className="mi io">⚡</div>
@@ -55,7 +55,7 @@ export default function MetricsGrid({
       </div>
 
       {/* 3. Relay Output */}
-      <div className="mb">
+      <div className="mb" data-motion-item>
         <div className="mt">
           <span className="ml">Relay</span>
           <div className="mi ig">🔌</div>
@@ -78,7 +78,7 @@ export default function MetricsGrid({
       </div>
 
       {/* 4. Autonomous State */}
-      <div className="mb">
+      <div className="mb" data-motion-item>
         <div className="mt">
           <span className="ml">State</span>
           <div className="mi ip">🛡️</div>

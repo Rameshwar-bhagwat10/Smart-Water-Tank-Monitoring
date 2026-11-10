@@ -9,7 +9,7 @@ interface ActivityTimelineProps {
 
 export default function ActivityTimeline({ events = [] }: ActivityTimelineProps) {
   return (
-    <div className="cd">
+    <div className="cd" data-motion-item>
       <div className="ch-hd">
         <span className="ch-t">Activity Log</span>
         <span className="ch-v" id="tl-ct">

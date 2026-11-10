@@ -9,7 +9,7 @@ interface HeaderProps {
 
 export default function Header({ onLogout, isOnline = true }: HeaderProps) {
   return (
-    <div className="hd">
+    <div className="hd" data-motion-item>
       <div className="hd-brand">
         <div className="hd-icon">
           <img src="/favicon.svg" width={22} height={22} alt="Water Tank" />

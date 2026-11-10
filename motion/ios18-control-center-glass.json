@@ -1,0 +1,41 @@
+{
+  "id": "ios18-control-center-glass",
+  "source": "https://apple.com/ios/ios-18",
+  "section": "Control Center / Controls Gallery",
+  "captured": "2026-11-10",
+  "triggers": ["click", "hover", "load"],
+  "materials": {
+    "background": "rgba(18, 22, 32, 0.68)",
+    "backdropFilter": "blur(28px) saturate(190%) contrast(105%)",
+    "borderRadius": "28px",
+    "border": "1px solid rgba(255, 255, 255, 0.12)",
+    "specularShadow": "0 20px 48px -12px rgba(0, 0, 0, 0.65), inset 0 1px 1px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.06)"
+  },
+  "curves": {
+    "springRelease": {
+      "name": "ios-spring-release",
+      "bezier": [0.175, 0.885, 0.32, 1.275],
+      "durationMs": 380,
+      "maxOvershoot": 1.087,
+      "curve": [0,0.124,0.241,0.349,0.448,0.537,0.616,0.686,0.747,0.8,0.847,0.887,0.922,0.952,0.978,1,1.019,1.034,1.048,1.059,1.068,1.075,1.08,1.083,1.086,1.087,1.087,1.085,1.083,1.08,1.076,1.071,1.066,1.059,1.052,1.045,1.037,1.028,1.019,1.01,1]
+    },
+    "pressDown": {
+      "name": "ios-press-down",
+      "bezier": [0.4, 0.0, 0.2, 1.0],
+      "durationMs": 120,
+      "scaleTarget": 0.965
+    },
+    "hoverLift": {
+      "name": "ios-hover-decelerate",
+      "bezier": [0.25, 1.0, 0.5, 1.0],
+      "durationMs": 320,
+      "scaleTarget": 1.012
+    },
+    "entranceStagger": {
+      "staggerStepMs": 45,
+      "durationMs": 480,
+      "bezier": [0.25, 1.0, 0.5, 1.0]
+    }
+  }
+}
+

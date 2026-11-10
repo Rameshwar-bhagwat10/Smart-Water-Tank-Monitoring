@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iOS 18 Control Center Glassmorphism Sandbox</title>
+  <style>
+    :root {
+      --bg: #090B10;
+      --ios-glass-bg: rgba(20, 24, 36, 0.68);
+      --ios-glass-bg-hover: rgba(26, 32, 48, 0.78);
+      --ios-glass-bg-active: rgba(14, 18, 28, 0.85);
+      --ios-glass-border: rgba(255, 255, 255, 0.12);
+      --ios-glass-border-hover: rgba(255, 255, 255, 0.22);
+      --ios-glass-blur: blur(28px) saturate(190%) contrast(105%);
+      --ios-specular-shadow: 
+        0 20px 48px -12px rgba(0, 0, 0, 0.65),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.28),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      --ios-specular-shadow-active:
+        0 8px 24px -6px rgba(0, 0, 0, 0.75),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.14),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      --ios-spring-release: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      --ios-press-down: cubic-bezier(0.4, 0.0, 0.2, 1.0);
+      --ios-decelerate: cubic-bezier(0.25, 1.0, 0.5, 1.0);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Ambient backdrop glow mimicking water cyan/lime behind the glass */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(212, 246, 61, 0.12) 0%, rgba(61, 246, 217, 0.08) 45%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .sandbox-container {
+      max-width: 440px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .sandbox-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .sandbox-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(212, 246, 61, 0.15);
+      color: #D4F63D;
+      border: 1px solid rgba(212, 246, 61, 0.3);
+    }
+
+    /* Base Glass Card */
+    .glass-card {
+      background: var(--ios-glass-bg);
+      backdrop-filter: var(--ios-glass-blur);
+      -webkit-backdrop-filter: var(--ios-glass-blur);
+      border: 1px solid var(--ios-glass-border);
+      border-radius: 28px;
+      padding: 22px;
+      box-shadow: var(--ios-specular-shadow);
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      overflow: hidden;
+      transform: translateZ(0);
+      transition: 
+        transform 0.38s var(--ios-spring-release),
+        background 0.24s var(--ios-decelerate),
+        border-color 0.24s var(--ios-decelerate),
+        box-shadow 0.24s var(--ios-decelerate);
+    }
+
+    .glass-card:hover {
+      background: var(--ios-glass-bg-hover);
+      border-color: var(--ios-glass-border-hover);
+      transform: scale(1.015) translateY(-1px);
+    }
+
+    .glass-card:active {
+      transform: scale(0.965);
+      background: var(--ios-glass-bg-active);
+      box-shadow: var(--ios-specular-shadow-active);
+      transition: transform 0.12s var(--ios-press-down);
+    }
+
+    .card-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #8A92A6;
+      margin-bottom: 6px;
+    }
+
+    .card-value {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -1px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .controls-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn-spring {
+      flex: 1;
+      height: 48px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: var(--ios-glass-blur);
+      -webkit-backdrop-filter: var(--ios-glass-blur);
+      transition: transform 0.38s var(--ios-spring-release), background 0.2s;
+    }
+
+    .btn-spring:active {
+      transform: scale(0.94);
+      transition: transform 0.12s var(--ios-press-down);
+    }
+
+    .btn-spring.primary {
+      background: #D4F63D;
+      color: #090B10;
+      border: none;
+      box-shadow: 0 4px 20px rgba(212, 246, 61, 0.35);
+    }
+
+    .log-box {
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 14px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #8A92A6;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+  </style>
+</head>
+<body>
+  <div class="sandbox-container" data-motion="ios18-control-center-glass">
+    <div class="sandbox-title">
+      <span>iOS 18 Glass Cards</span>
+      <span class="sandbox-badge">Fluid Spring</span>
+    </div>
+
+    <!-- Hero Card -->
+    <div class="glass-card" id="card1" data-motion-item>
+      <div class="card-label">Fluid Tap Target 1</div>
+      <div class="card-value">94.8<span style="color:#D4F63D; font-size:20px; margin-left:4px;">%</span></div>
+      <p style="font-size:12px; color:#8A92A6; margin-top:4px;">Tap or click to feel the 380ms iOS spring rebound.</p>
+    </div>
+
+    <!-- 2x2 Grid -->
+    <div class="card-grid">
+      <div class="glass-card" id="card2" data-motion-item>
+        <div class="card-label">Tile A</div>
+        <div style="font-size:20px; font-weight:700;">12.4 <span style="font-size:12px; color:#8A92A6;">L/min</span></div>
+      </div>
+      <div class="glass-card" id="card3" data-motion-item>
+        <div class="card-label">Tile B</div>
+        <div style="font-size:20px; font-weight:700;">2.15 <span style="font-size:12px; color:#8A92A6;">A</span></div>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <button class="btn-spring primary" id="btnTest">Trigger Rebound</button>
+      <button class="btn-spring" id="btnReset">Reset State</button>
+    </div>
+
+    <div class="log-box" id="logBox">Status: Ready. Click any card to test spring physics.</div>
+  </div>
+
+  <script>
+    const logBox = document.getElementById('logBox');
+    const cards = document.querySelectorAll('.glass-card, .btn-spring');
+
+    cards.forEach((el, idx) => {
+      el.addEventListener('pointerdown', () => {
+        logBox.innerText = `[${new Date().toLocaleTimeString()}] Pointer down: scale 0.965 (120ms press-down)`;
+      });
+      el.addEventListener('pointerup', () => {
+        logBox.innerText = `[${new Date().toLocaleTimeString()}] Pointer release: spring overshoot (380ms bounce)`;
+      });
+    });
+
+    document.getElementById('btnTest').addEventListener('click', () => {
+      const hero = document.getElementById('card1');
+      hero.style.transform = 'scale(0.965)';
+      setTimeout(() => {
+        hero.style.transform = 'scale(1.0)';
+      }, 120);
+    });
+  </script>
+</body>
+</html>
+

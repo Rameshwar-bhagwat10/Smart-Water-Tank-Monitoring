@@ -110,7 +110,7 @@ export default function WaterLevelChart({
   const displayLevel = currentLevel >= 0 ? `${currentLevel.toFixed(1)} %` : '-- %';
 
   return (
-    <div className="cd ch-wrap">
+    <div className="cd ch-wrap" data-motion-item>
       <div className="ch-hd">
         <span className="ch-t">Water Level Trend</span>
         <span className="ch-v" id="ch-lv">

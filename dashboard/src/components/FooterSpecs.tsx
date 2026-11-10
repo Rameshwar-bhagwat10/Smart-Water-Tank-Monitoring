@@ -16,7 +16,7 @@ export default function FooterSpecs({
   lastTelemetry = '--',
 }: FooterSpecsProps) {
   return (
-    <div className="fl">
+    <div className="fl" data-motion-item>
       <div className="fl-r">
         <span>Channel</span>
         <b>☁️ Cloud RTDB</b>
