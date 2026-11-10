@@ -103,7 +103,7 @@ export default function WaterLevelChart({
 
     ctx.beginPath();
     ctx.arc(lp.x, lp.y, 2, 0, Math.PI * 2);
-    ctx.fillStyle = '#090B10';
+    ctx.fillStyle = '#000000';
     ctx.fill();
   }, [history]);
 

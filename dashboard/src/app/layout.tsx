@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#090B10',
+  themeColor: '#000000',
   width: 'device-width',
   initialScale: 1,
 };
@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body style={{ background: '#090B10', margin: 0, padding: 0 }}>
+      <body style={{ background: '#000000', margin: 0, padding: 0 }}>
         <div id="app">{children}</div>
       </body>
     </html>

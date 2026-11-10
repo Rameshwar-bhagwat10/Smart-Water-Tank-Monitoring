@@ -1,23 +1,23 @@
 /* ============================================================================
-   Smart Water Tank — Futuristic Dark & Electric Lime Design System
-   Inspired by Monex (Luxury Dark Fintech) & Kalo (Precision Health Tracking)
+   Smart Water Tank — Stealth OLED Pure Black & Liquid Glass Design System
+   iOS 18 Control Center Glassmorphism with Electric Chartreuse Accents
    ============================================================================ */
 
 :root {
-  /* Dark obsidian background palette */
-  --bg: #090B10;
-  --bg-gradient: radial-gradient(120% 90% at 50% -10%, #171E2E 0%, #0D1017 45%, #080A0E 100%);
+  /* Stealth OLED Pure Black Background Palette */
+  --bg: #000000;
+  --bg-gradient: radial-gradient(130% 90% at 50% -10%, #0E1015 0%, #050608 50%, #000000 100%);
   
-  /* Elevated cards & surfaces */
-  --card: #131722;
-  --card-hover: #171C2B;
-  --card-inner: #191E2C;
-  --card-inset: #11141E;
+  /* Elevated Smoked Glass Surfaces (Neutral Dark Obsidian) */
+  --card: rgba(14, 15, 18, 0.68);
+  --card-hover: rgba(22, 24, 28, 0.78);
+  --card-inner: rgba(18, 19, 23, 0.55);
+  --card-inset: rgba(8, 9, 11, 0.85);
   
-  /* Borders & Dividers */
-  --border: rgba(255, 255, 255, 0.08);
-  --border-light: rgba(255, 255, 255, 0.12);
-  --border-glow: rgba(212, 246, 61, 0.35);
+  /* Specular Borders & Dividers */
+  --border: rgba(255, 255, 255, 0.10);
+  --border-light: rgba(255, 255, 255, 0.16);
+  --border-glow: rgba(212, 246, 61, 0.40);
   --separator: rgba(255, 255, 255, 0.06);
   
   /* Typography */
@@ -28,8 +28,8 @@
   /* Signature Accents (Electric Chartreuse / Neon Lime) */
   --accent: #D4F63D;
   --accent-hover: #E2FC5B;
-  --accent-dark: #090B10;
-  --accent-glow: rgba(212, 246, 61, 0.3);
+  --accent-dark: #000000;
+  --accent-glow: rgba(212, 246, 61, 0.35);
   --accent-soft: rgba(212, 246, 61, 0.12);
   
   /* Functional Colors */
@@ -51,28 +51,28 @@
   --r-pill: 9999px;
   
   /* Shadows */
-  --shadow-card: 0 16px 36px -10px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 24px rgba(212, 246, 61, 0.28);
+  --shadow-card: 0 20px 48px -12px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 28px rgba(212, 246, 61, 0.30);
 
-  /* iOS 18 Control Center Motion & Glassmorphism Design Tokens */
-  --ios-glass-bg: rgba(19, 24, 36, 0.72);
-  --ios-glass-bg-hover: rgba(25, 32, 48, 0.82);
-  --ios-glass-bg-active: rgba(14, 18, 28, 0.90);
-  --ios-glass-blur: blur(28px) saturate(190%) contrast(105%);
+  /* iOS 18 Control Center Motion & Smoked Glassmorphism Design Tokens */
+  --ios-glass-bg: rgba(14, 15, 18, 0.65);
+  --ios-glass-bg-hover: rgba(22, 24, 28, 0.75);
+  --ios-glass-bg-active: rgba(8, 9, 11, 0.90);
+  --ios-glass-blur: blur(28px) saturate(210%) contrast(108%);
   --ios-glass-border: rgba(255, 255, 255, 0.12);
   --ios-glass-border-hover: rgba(255, 255, 255, 0.22);
   --ios-specular-shadow: 
-    0 20px 48px -12px rgba(0, 0, 0, 0.65),
-    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.28),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    0 24px 60px -12px rgba(0, 0, 0, 0.85),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.30),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   --ios-specular-shadow-hover: 
-    0 24px 54px -10px rgba(0, 0, 0, 0.72),
-    inset 0 1px 2px 0 rgba(255, 255, 255, 0.38),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+    0 28px 70px -10px rgba(0, 0, 0, 0.90),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   --ios-specular-shadow-active: 
-    0 8px 24px -6px rgba(0, 0, 0, 0.80),
+    0 10px 28px -6px rgba(0, 0, 0, 0.95),
     inset 0 1px 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   --ios-spring-release: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --ios-press-down: cubic-bezier(0.4, 0.0, 0.2, 1.0);
   --ios-decelerate: cubic-bezier(0.25, 1.0, 0.5, 1.0);
@@ -101,20 +101,35 @@ body {
   justify-content: center;
   min-height: 100vh;
   position: relative;
+  background-color: #000000;
 }
 
-/* Background Ambient Lighting */
+/* Background Ambient Lighting — Strategic Luminous Orbs for Rich Glassmorphism Refraction */
 #app::before {
   content: '';
   position: fixed;
-  top: -150px;
+  top: -120px;
   left: 50%;
   transform: translateX(-50%);
-  width: 600px;
-  height: 400px;
-  background: radial-gradient(ellipse at center, rgba(212, 246, 61, 0.08) 0%, rgba(61, 246, 217, 0.03) 45%, transparent 75%);
+  width: 580px;
+  height: 440px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(212, 246, 61, 0.12) 0%, rgba(61, 246, 217, 0.04) 50%, transparent 75%);
   pointer-events: none;
   z-index: 0;
+  filter: blur(10px);
+}
+
+#app::after {
+  content: '';
+  position: fixed;
+  bottom: 60px;
+  right: max(0px, calc(50% - 320px));
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle at center, rgba(61, 246, 217, 0.07) 0%, rgba(175, 82, 222, 0.04) 45%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(20px);
 }
 
 /* ============================================================================
@@ -156,7 +171,7 @@ body {
   left: 0;
   right: 0;
   height: 110px;
-  background: radial-gradient(140% 100% at 50% -20%, rgba(212, 246, 61, 0.16) 0%, rgba(19, 23, 34, 0) 100%);
+  background: radial-gradient(140% 100% at 50% -20%, rgba(212, 246, 61, 0.16) 0%, rgba(14, 15, 18, 0) 100%);
   pointer-events: none;
 }
 
@@ -176,9 +191,9 @@ body {
   height: 68px;
   margin: 0 auto 16px;
   border-radius: 22px;
-  background: linear-gradient(145deg, #1A2130 0%, #10141D 100%);
+  background: linear-gradient(145deg, #18191E 0%, #0A0A0E 100%);
   border: 1px solid rgba(212, 246, 61, 0.35);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 0 20px rgba(212, 246, 61, 0.22);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 246, 61, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -269,8 +284,8 @@ body {
 
 .input-group input:focus {
   border-color: var(--accent);
-  background: #1C2333;
-  box-shadow: 0 0 0 4px rgba(212, 246, 61, 0.16), 0 4px 16px rgba(0, 0, 0, 0.4);
+  background: rgba(20, 22, 28, 0.95);
+  box-shadow: 0 0 0 4px rgba(212, 246, 61, 0.16), 0 4px 16px rgba(0, 0, 0, 0.6);
 }
 
 .input-wrapper:focus-within .input-icon {
@@ -412,14 +427,14 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 8px 14px 8px 10px;
-  background: rgba(18, 22, 34, 0.65);
+  background: rgba(12, 13, 16, 0.68);
   backdrop-filter: var(--ios-glass-blur);
   -webkit-backdrop-filter: var(--ios-glass-blur);
   border: 1px solid var(--ios-glass-border);
   border-radius: var(--r-pill);
   box-shadow: 
-    0 12px 32px -8px rgba(0, 0, 0, 0.55),
-    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.24),
+    0 16px 36px -8px rgba(0, 0, 0, 0.8),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.28),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   margin-bottom: 2px;
   transform: translateZ(0);
@@ -565,8 +580,8 @@ body {
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 22px 20px;
-  background: linear-gradient(145deg, #151926 0%, #11141F 100%);
+  padding: 24px 22px;
+  background: radial-gradient(140% 120% at 85% 15%, rgba(212, 246, 61, 0.08) 0%, rgba(14, 15, 18, 0.72) 65%);
   position: relative;
 }
 
@@ -578,21 +593,21 @@ body {
   right: 0;
   width: 140px;
   height: 100%;
-  background: radial-gradient(circle at 100% 0%, rgba(212, 246, 61, 0.08) 0%, transparent 70%);
+  background: radial-gradient(circle at 100% 0%, rgba(212, 246, 61, 0.10) 0%, transparent 70%);
   pointer-events: none;
 }
 
 .tk {
   width: 68px;
   height: 126px;
-  background: #10131C;
+  background: #030406;
   border-radius: 18px;
-  border: 1.5px solid rgba(255, 255, 255, 0.09);
+  border: 1.5px solid rgba(255, 255, 255, 0.13);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column-reverse;
-  box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.7), 0 4px 14px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 3px 14px rgba(0, 0, 0, 0.95), 0 4px 16px rgba(0, 0, 0, 0.7);
   flex-shrink: 0;
 }
 
@@ -956,13 +971,13 @@ canvas {
 /* Kalo Segmented Pill Control — iOS 18 Control Center Switcher */
 .seg {
   display: flex;
-  background: rgba(14, 18, 28, 0.75);
+  background: rgba(10, 11, 14, 0.78);
   backdrop-filter: var(--ios-glass-blur);
   -webkit-backdrop-filter: var(--ios-glass-blur);
   border-radius: var(--r-pill);
   padding: 4px;
   border: 1px solid var(--ios-glass-border);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8), inset 0 1px 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .sb {
